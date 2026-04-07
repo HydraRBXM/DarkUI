@@ -1,5 +1,5 @@
 -- Aimbot Handler - v2
-
+task.wait(3)
 local function UpdateSettings()
 	pcall(function()
 		if not Toggles or not Options then return end
