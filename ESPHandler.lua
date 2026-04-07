@@ -1,3 +1,4 @@
+task.wait(3)
 local EspPlayers = game:GetService("Players")
 local EspRunService = game:GetService("RunService")
 local EspCamera = workspace.CurrentCamera
