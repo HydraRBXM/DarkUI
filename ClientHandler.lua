@@ -188,7 +188,7 @@ shared.Client.LoopFOV:OnChanged(function()
 	if shared.Client.LoopFOV.Value then StartLoopFov() else StopLoopFov(); TweenFOV(70) end
 end)
 
-shared.Client.FOV:OnChanged(function()
+shared.Client.Fov:OnChanged(function()
 	TweenService:Create(Camera, TweenInfo.new(0.3), {FieldOfView = shared.Client.FOV.Value}):Play()
 end)
 
