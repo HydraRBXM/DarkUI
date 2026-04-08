@@ -1,4 +1,5 @@
 -- Client Handler - v2
+print("eheee")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
@@ -99,11 +100,11 @@ local MaterialMap = {
 	Fabric = Enum.Material.Fabric,
 }
 
-CharacterMaterials.Changed:Connect(function()
+shared.Client.CharacterMaterials:GetPropertyChangedSignal("Value"):Connect(function(vl)
 	local char = GetCharacter()
 	if not char then return end
 
-	local val = CharacterMaterials.Value
+	local val = vl
 	local mat = MaterialMap[val]
 	if not mat then return end
 
