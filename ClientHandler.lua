@@ -100,10 +100,10 @@ local MaterialMap = {
 	Fabric = Enum.Material.Fabric,
 }
 
-shared.Client.CharacterMaterials:OnChanged(function(val)
+shared.Client.CharacterMaterials:OnChanged(function()
 	local char = GetCharacter()
 	if not char then return end
-	local mat = MaterialMap[val]
+	local mat = MaterialMap[shared.Client.CharacterMaterials.Value]
 	if not mat then return end
 	for _, part in ipairs(char:GetDescendants()) do
 		if part:IsA("BasePart") then
