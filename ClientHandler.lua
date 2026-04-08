@@ -1,9 +1,11 @@
 -- Client Handler - v2
-print("[Comet]: Starting client")
+print("heyy")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local VirtualUser = game:GetService("VirtualUser")
+
+local Player = game.Players.LocalPlayer
 
 local function GetCharacter() return Player.Character end
 local function GetHRP()
@@ -78,11 +80,13 @@ local function RevertNaked()
 	shared.Client.ClothesSaved = {}
 end
 
-shared.Client.Naked:OnChanged(function(val)
-	if val then ApplyNaked() else RevertNaked() end
+shared.Client.Naked:OnChanged(function()
+	if shared.Client.Naked.Value then
+		ApplyNaked()
+	else
+		RevertNaked()
+	end
 end)
-
-local Player = game.Players:WaitForChild(LocalPlayer, 2)
 
 -- ═══════════════════════════════════════════
 --  CHARACTER MATERIALS
@@ -125,14 +129,15 @@ local function StartLoopWS()
 	end)
 end
 
-shared.Client.LoopWalkspeed:OnChanged(function(val)
-	if val then StartLoopWS()
+shared.Client.LoopWalkspeed:OnChanged(function()
+	if shared.Client.LoopWalkspeed.Value then StartLoopWS()
 	else StopLoopWS(); local hum = GetHum(); if hum then hum.WalkSpeed = 16 end end
 end)
 
-shared.Client.Walkspeed:OnChanged(function(val)
-	local hum = GetHum(); if hum then hum.WalkSpeed = val end
+shared.Client.Walkspeed:OnChanged(function()
+	local hum = GetHum(); if hum then hum.WalkSpeed = shared.Client.Walkspeed.Value end
 end)
+
 
 -- ═══════════════════════════════════════════
 --  LOOP JUMP POWER
@@ -154,13 +159,13 @@ local function StartLoopJP()
 	end)
 end
 
-shared.Client.LoopJumpPower:OnChanged(function(val)
-	if val then StartLoopJP()
+shared.Client.LoopJumpPower:OnChanged(function()
+	if shared.Client.LoopJumpPower.Value then StartLoopJP()
 	else StopLoopJP(); local hum = GetHum(); if hum then hum.JumpPower = 50; hum.JumpHeight = 7.2 end end
 end)
 
-shared.Client.JumpPower:OnChanged(function(val)
-	local hum = GetHum(); if hum then hum.JumpPower = val; hum.JumpHeight = val end
+shared.Client.JumpPower:OnChanged(function()
+	local hum = GetHum(); if hum then hum.JumpPower = shared.Client.JumpPower.Value; hum.JumpHeight = shared.Client.JumpPower.Value end
 end)
 
 -- ═══════════════════════════════════════════
@@ -179,12 +184,12 @@ local function StartLoopFov()
 	end)
 end
 
-shared.Client.LoopFOV:OnChanged(function(val)
-	if val then StartLoopFov() else StopLoopFov(); TweenFOV(70) end
+shared.Client.LoopFOV:OnChanged(function()
+	if shared.Client.LoopFOV.Value then StartLoopFov() else StopLoopFov(); TweenFOV(70) end
 end)
 
-shared.Client.FOV:OnChanged(function(val)
-	TweenService:Create(Camera, TweenInfo.new(0.3), {FieldOfView = val}):Play()
+shared.Client.FOV:OnChanged(function()
+	TweenService:Create(Camera, TweenInfo.new(0.3), {FieldOfView = shared.Client.FOV.Value}):Play()
 end)
 
 -- ═══════════════════════════════════════════
@@ -214,8 +219,8 @@ local function StartNoclip()
 	end)
 end
 
-shared.Client.Noclip:OnChanged(function(val)
-	if val then StartNoclip() else StopNoclip() end
+shared.Client.Noclip:OnChanged(function()
+	if shared.Client.Noclip.Value then StartNoclip() else StopNoclip() end
 end)
 
 -- ═══════════════════════════════════════════
@@ -253,8 +258,8 @@ local function StartPause()
 	end)
 end
 
-shared.Client.PauseFE:OnChanged(function(val)
-	if val then StartPause() else StopPause() end
+shared.Client.PauseFE:OnChanged(function()
+	if shared.Client.PauseFE.Value then StartPause() else StopPause() end
 end)
 
 -- ═══════════════════════════════════════════
@@ -289,8 +294,8 @@ local function StartRainbowTool()
 	end)
 end
 
-shared.Client.RainbowTool:OnChanged(function(val)
-	if val then StartRainbowTool() else StopRainbowTool() end
+shared.Client.RainbowTool:OnChanged(function()
+	if shared.Client.RainbowTool.Value then StartRainbowTool() else StopRainbowTool() end
 end)
 
 -- ═══════════════════════════════════════════
@@ -323,8 +328,8 @@ local function StartRainbowChar()
 	end)
 end
 
-shared.Client.RainbowCharacter:OnChanged(function(val)
-	if val then StartRainbowChar() else StopRainbowChar() end
+shared.Client.RainbowCharacter:OnChanged(function()
+	if shared.Client.RainbowCharacter.Value then StartRainbowChar() else StopRainbowChar() end
 end)
 
 -- ═══════════════════════════════════════════
@@ -395,18 +400,18 @@ local function RevertRTX()
 	shared.Client.RTXPartSaved = {}
 end
 
-shared.Client.RTX:OnChanged(function(val)
-	if val then ApplyRTX() else RevertRTX() end
+shared.Client.RTX:OnChanged(function()
+	if shared.Client.RTX.Value then ApplyRTX() else RevertRTX() end
 end)
 
 -- ═══════════════════════════════════════════
 --  NO ZOOM LIMIT
 -- ═══════════════════════════════════════════
-shared.Client.NoZoomLimit:OnChanged(function(val)
+shared.Client.NoZoomLimit:OnChanged(function()
 	pcall(function()
 		local PlayerModule = require(Player.PlayerScripts:WaitForChild("PlayerModule"))
 		local cameraModule = PlayerModule:GetCameras()
-		if val then
+		if shared.Client.NoZoomLimit.Value then
 			cameraModule:SetMinZoomDistance(0)
 			cameraModule:SetMaxZoomDistance(500)
 		else
@@ -493,8 +498,8 @@ local function StartFly()
 	end)
 end
 
-shared.Client.Fly:OnChanged(function(val)
-	if val then StartFly() else StopFly() end
+shared.Client.Fly:OnChanged(function()
+	if shared.Client.Fly.Value then StartFly() else StopFly() end
 end)
 
 -- ═══════════════════════════════════════════
@@ -562,8 +567,8 @@ local function StartCframeFly()
 	end)
 end
 
-shared.Client.CFly:OnChanged(function(val)
-	if val then StartCframeFly() else StopCframeFly() end
+shared.Client.CFly:OnChanged(function()
+	if shared.Client.CFly.Value then StartCframeFly() else StopCframeFly() end
 end)
 
 -- ═══════════════════════════════════════════
@@ -595,8 +600,8 @@ Player.Idled:Connect(function()
 	end
 end)
 
-shared.Client.AntiAFK:OnChanged(function(val)
-	if val then StartAntiAFK() else StopAntiAFK() end
+shared.Client.AntiAFK:OnChanged(function()
+	if shared.Client.AntiAFK.Value then StartAntiAFK() else StopAntiAFK() end
 end)
 
 -- ═══════════════════════════════════════════
@@ -615,8 +620,8 @@ local function StartInfJump()
 	end)
 end
 
-shared.Client.InfiniteJump:OnChanged(function(val)
-	if val then StartInfJump() else StopInfJump() end
+shared.Client.InfiniteJump:OnChanged(function()
+	if shared.Client.InfiniteJump.Value then StartInfJump() else StopInfJump() end
 end)
 
 -- ═══════════════════════════════════════════
@@ -634,7 +639,7 @@ local function SetFreeze(enabled)
 	end
 end
 
-shared.Client.Freeze:OnChanged(function(val) SetFreeze(val) end)
+shared.Client.Freeze:OnChanged(function() SetFreeze(shared.Client.Freeze.Value) end)
 
 -- ═══════════════════════════════════════════
 --  USE VELOCITY
@@ -656,8 +661,8 @@ local function StartUseVelocity()
 	end)
 end
 
-shared.Client.Velocity:OnChanged(function(val)
-	if val then StartUseVelocity() else StopUseVelocity() end
+shared.Client.Velocity:OnChanged(function()
+	if shared.Client.Velocity.Value then StartUseVelocity() else StopUseVelocity() end
 end)
 
 -- ═══════════════════════════════════════════
@@ -684,8 +689,8 @@ local function StartSpin()
 	end)
 end
 
-shared.Client.CarSpin:OnChanged(function(val)
-	if val then StartSpin() else StopSpin() end
+shared.Client.CarSpin:OnChanged(function()
+	if shared.Client.CarSpin.Value then StartSpin() else StopSpin() end
 end)
 
 -- ═══════════════════════════════════════════
@@ -718,8 +723,8 @@ local function StartBouncy()
 	end)
 end
 
-shared.Client.BouncyCar:OnChanged(function(val)
-	if val then StartBouncy() else StopBouncy() end
+shared.Client.BouncyCar:OnChanged(function()
+	if shared.Client.BouncyCar.Value then StartBouncy() else StopBouncy() end
 end)
 
 -- ═══════════════════════════════════════════
@@ -765,8 +770,8 @@ local function StartFlingCar()
 	end)
 end
 
-shared.Client.FlingCar:OnChanged(function(val)
-	if val then StartFlingCar() else StopFlingCar() end
+shared.Client.FlingCar:OnChanged(function()
+	if shared.Client.FlingCar.Value then StartFlingCar() else StopFlingCar() end
 end)
 
 -- ═══════════════════════════════════════════
@@ -828,8 +833,8 @@ local function StartCarFly()
 	end)
 end
 
-shared.Client.CarFly:OnChanged(function(val)
-	if val then StartCarFly() else StopCarFly() end
+shared.Client.CarFly:OnChanged(function()
+	if shared.Client.CarFly.Value then StartCarFly() else StopCarFly() end
 end)
 
 -- ═══════════════════════════════════════════
@@ -863,8 +868,8 @@ local function StartBoost()
 	end)
 end
 
-shared.Client.CarBoost:OnChanged(function(val)
-	if val then StartBoost() else StopBoost() end
+shared.Client.CarBoost:OnChanged(function()
+	if shared.Client.CarBoost.Value then StartBoost() else StopBoost() end
 end)
 
 -- ═══════════════════════════════════════════
@@ -963,8 +968,8 @@ local function StartHovering()
 	end)
 end
 
-shared.Client.CarFlinger:OnChanged(function(val)
-	if val then StartHovering() else StopHovering() end
+shared.Client.CarFlinger:OnChanged(function()
+	if shared.Client.CarFlinger.Value then StartHovering() else StopHovering() end
 end)
 
 -- ═══════════════════════════════════════════
