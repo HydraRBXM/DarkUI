@@ -3,6 +3,7 @@ local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local VirtualUser = game:GetService("VirtualUser")
+local Camera = workspace.CurrentCamera
 
 local Player = game.Players.LocalPlayer
 
@@ -171,6 +172,10 @@ end)
 -- ═══════════════════════════════════════════
 --  LOOP FOV
 -- ═══════════════════════════════════════════
+local function TweenFOV(target)
+	TweenService:Create(Camera, TweenInfo.new(0.5), {FieldOfView = target}):Play()
+end
+
 local function StopLoopFov()
 	shared.Client.LoopFovConnection = SafeDisconnect(shared.Client.LoopFovConnection)
 end
@@ -189,7 +194,7 @@ shared.Client.LoopFOV:OnChanged(function()
 end)
 
 shared.Client.Fov:OnChanged(function()
-	TweenService:Create(Camera, TweenInfo.new(0.3), {FieldOfView = shared.Client.FOV.Value}):Play()
+	TweenService:Create(Camera, TweenInfo.new(0.3), {FieldOfView = shared.Client.Fov.Value}):Play()
 end)
 
 -- ═══════════════════════════════════════════
@@ -436,7 +441,6 @@ local function StopFly()
 		local bg = hrp:FindFirstChild("FlyBodyGyro");     if bg then bg:Destroy() end
 		local snd = hrp:FindFirstChild("Running");        if snd then snd.Volume = 0.65 end
 	end
-	TweenFOV(70)
 end
 
 local function StartFly()
@@ -462,7 +466,6 @@ local function StartFly()
 		hum:ChangeState(6); bg.CFrame = bg.CFrame:Lerp(Camera.CFrame, 0.2)
 		local dir = GetFlyDir()
 		TweenService:Create(bv, TweenInfo.new(0.15), {Velocity = dir * shared.Client.FlySpeed.Value}):Play()
-		TweenFOV(dir ~= Vector3.zero and 100 or 70)
 	end)
 
 	shared.Client.FlyInputBegan = UIS.InputBegan:Connect(function(key, gp)
@@ -485,7 +488,6 @@ local function StartFly()
 				local snd=hrp:FindFirstChild("Running"); if snd then snd.Volume=0.65 end
 				local bv=hrp:FindFirstChild("FlyBodyVelocity"); if bv then bv:Destroy() end
 				local bg=hrp:FindFirstChild("FlyBodyGyro");     if bg then bg:Destroy() end
-				TweenFOV(70)
 			end
 		elseif key.KeyCode == Enum.KeyCode.Space     then shared.Client.flyUp   = true
 		elseif key.KeyCode == Enum.KeyCode.LeftShift then shared.Client.flyDown = true
@@ -514,7 +516,6 @@ local function StopCframeFly()
 	SetCharacterCollision(true)
 	local hum = GetHum()
 	if hum then SetHumanoidStates(hum, true); hum:ChangeState(Enum.HumanoidStateType.Freefall) end
-	TweenFOV(70)
 end
 
 local function StartCframeFly()
@@ -540,7 +541,6 @@ local function StartCframeFly()
 			+ Vector3.new(0, (cfUp and 1 or 0)-(cfDown and 1 or 0), 0)
 		local moving = dir.Magnitude > 0.001; if moving then dir = dir.Unit end
 		hrp.CFrame = CFrame.new(hrp.Position + dir*shared.Client.FlySpeed.Value*dt) * (hrp.CFrame - hrp.Position)
-		TweenFOV(moving and 100 or 70)
 	end)
 
 	shared.Client.CframeFlyInputBegan = UIS.InputBegan:Connect(function(key, gp)
