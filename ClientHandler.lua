@@ -4,7 +4,7 @@ local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local VirtualUser = game:GetService("VirtualUser")
 
-local Player = Players.LocalPlayer
+local Player = game.Players.LocalPlayer
 
 local function GetCharacter() return Player.Character end
 local function GetHRP()
