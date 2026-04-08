@@ -1,5 +1,4 @@
 -- Client Handler - v2
-print("eheee")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
@@ -100,21 +99,17 @@ local MaterialMap = {
 	Fabric = Enum.Material.Fabric,
 }
 
-shared.Client.CharacterMaterials:GetPropertyChangedSignal("Value"):Connect(function(vl)
-	local char = GetCharacter()
-	if not char then return end
-
-	local val = vl
-	local mat = MaterialMap[val]
-	if not mat then return end
-
-	for _, part in ipairs(char:GetDescendants()) do
-		if part:IsA("BasePart") then
-			pcall(function()
-				part.Material = mat
-			end)
-		end
-	end
+shared.Client.CharacterMaterials:OnChanged(function()
+    local char = GetCharacter()
+    if not char then return end
+    local val = shared.Client.CharacterMaterials.Value
+    local mat = MaterialMap[val]
+    if not mat then return end
+    for _, part in ipairs(char:GetDescendants()) do
+        if part:IsA("BasePart") then
+            pcall(function() part.Material = mat end)
+        end
+    end
 end)
 
 -- ═══════════════════════════════════════════
