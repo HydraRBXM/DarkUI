@@ -1,27 +1,85 @@
-task.wait(3)
+-- Client Handler - v2
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local VirtualUser = game:GetService("VirtualUser")
+
+local Player = Players.LocalPlayer
+
+local function GetCharacter() return Player.Character end
+local function GetHRP()
+	local c = GetCharacter()
+	return c and c:FindFirstChild("HumanoidRootPart")
+end
+local function GetHum()
+	local c = GetCharacter()
+	return c and c:FindFirstChildOfClass("Humanoid")
+end
+local function GetSeat()
+	local hum = GetHum()
+	return hum and hum.Sit and hum.SeatPart or nil
+end
+
+-- ═══════════════════════════════════════════
+--  HELPERS
+-- ═══════════════════════════════════════════
+local function SafeDisconnect(conn)
+	if conn then conn:Disconnect() end
+	return nil
+end
+
+local function WaitUntil(fn, interval)
+	interval = interval or 0.5
+	while true do
+		local result = fn()
+		if result then return result end
+		task.wait(interval)
+	end
+end
+
+local function SetHumanoidStates(hum, enabled)
+	if not hum then return end
+	for _, state in ipairs({
+		Enum.HumanoidStateType.Running,
+		Enum.HumanoidStateType.Climbing,
+		Enum.HumanoidStateType.FallingDown,
+		Enum.HumanoidStateType.Freefall,
+		}) do
+		hum:SetStateEnabled(state, enabled)
+	end
+end
+
+local function SetCharacterCollision(enabled)
+	local char = GetCharacter()
+	if not char then return end
+	for _, part in ipairs(char:GetDescendants()) do
+		if part:IsA("BasePart") then part.CanCollide = enabled end
+	end
+end
+
 -- ═══════════════════════════════════════════
 --  NAKED
 -- ═══════════════════════════════════════════
 local function ApplyNaked()
 	local char = GetCharacter()
 	if not char then return end
-	ClothesSaved = {}
+	shared.Client.ClothesSaved = {}
 	for _, obj in ipairs(char:GetDescendants()) do
 		if obj:IsA("Shirt") or obj:IsA("Pants") or obj:IsA("ShirtGraphic") then
-			ClothesSaved[obj] = obj.Parent
+			shared.Client.ClothesSaved[obj] = obj.Parent
 			obj.Parent = nil
 		end
 	end
 end
 
 local function RevertNaked()
-	for obj, parent in pairs(ClothesSaved) do
+	for obj, parent in pairs(shared.Client.ClothesSaved) do
 		if obj and parent then obj.Parent = parent end
 	end
-	ClothesSaved = {}
+	shared.Client.ClothesSaved = {}
 end
 
-Toggles.Naked:OnChanged(function(val)
+shared.Client.Naked:OnChanged(function(val)
 	if val then ApplyNaked() else RevertNaked() end
 end)
 
@@ -30,14 +88,14 @@ end)
 -- ═══════════════════════════════════════════
 local MaterialMap = {
 	SmoothPlastic = Enum.Material.SmoothPlastic,
-	Neon          = Enum.Material.Neon,
-	Glass         = Enum.Material.Glass,
-	Metal         = Enum.Material.Metal,
-	Wood          = Enum.Material.Wood,
-	Fabric        = Enum.Material.Fabric,
+	Neon = Enum.Material.Neon,
+	Glass = Enum.Material.Glass,
+	Metal = Enum.Material.Metal,
+	Wood = Enum.Material.Wood,
+	Fabric = Enum.Material.Fabric,
 }
 
-Options.CharacterMaterials:OnChanged(function(val)
+shared.Client.CharacterMaterials:OnChanged(function(val)
 	local char = GetCharacter()
 	if not char then return end
 	local mat = MaterialMap[val]
@@ -53,25 +111,25 @@ end)
 --  LOOP WALKSPEED
 -- ═══════════════════════════════════════════
 local function StopLoopWS()
-	LoopWSConnection = SafeDisconnect(LoopWSConnection)
+	shared.Client.LoopWSConnection = SafeDisconnect(shared.Client.LoopWSConnection)
 end
 
 local function StartLoopWS()
 	StopLoopWS()
-	if not Toggles.LoopWalkspeed.Value then return end
-	LoopWSConnection = RunService.Heartbeat:Connect(function()
-		if not Toggles.LoopWalkspeed.Value then StopLoopWS() return end
+	if not shared.Client.LoopWalkspeed.Value then return end
+	shared.Client.LoopWSConnection = RunService.Heartbeat:Connect(function()
+		if not shared.Client.LoopWalkspeed.Value then StopLoopWS() return end
 		local hum = GetHum()
-		if hum then hum.WalkSpeed = Options.Walkspeed.Value end
+		if hum then hum.WalkSpeed = shared.Client.Walkspeed.Value end
 	end)
 end
 
-Toggles.LoopWalkspeed:OnChanged(function(val)
+shared.Client.LoopWalkspeed:OnChanged(function(val)
 	if val then StartLoopWS()
 	else StopLoopWS(); local hum = GetHum(); if hum then hum.WalkSpeed = 16 end end
 end)
 
-Options.Walkspeed:OnChanged(function(val)
+shared.Client.Walkspeed:OnChanged(function(val)
 	local hum = GetHum(); if hum then hum.WalkSpeed = val end
 end)
 
@@ -79,28 +137,28 @@ end)
 --  LOOP JUMP POWER
 -- ═══════════════════════════════════════════
 local function StopLoopJP()
-	LoopJPConnection = SafeDisconnect(LoopJPConnection)
+	LoopJPConnection = SafeDisconnect(shared.Client.LoopJPConnection)
 end
 
 local function StartLoopJP()
 	StopLoopJP()
-	if not Toggles.LoopJumpPower.Value then return end
+	if not shared.Client.LoopJumpPower.Value then return end
 	LoopJPConnection = RunService.Heartbeat:Connect(function()
-		if not Toggles.LoopJumpPower.Value then StopLoopJP() return end
+		if not shared.Client.LoopJumpPower.Value then StopLoopJP() return end
 		local hum = GetHum()
 		if hum then
-			hum.JumpPower  = Options.JumpPower.Value
-			hum.JumpHeight = Options.JumpPower.Value
+			hum.JumpPower  = shared.Client.JumpPower.Value
+			hum.JumpHeight = shared.Client.JumpPower.Value
 		end
 	end)
 end
 
-Toggles.LoopJumpPower:OnChanged(function(val)
+shared.Client.LoopJumpPower:OnChanged(function(val)
 	if val then StartLoopJP()
 	else StopLoopJP(); local hum = GetHum(); if hum then hum.JumpPower = 50; hum.JumpHeight = 7.2 end end
 end)
 
-Options.JumpPower:OnChanged(function(val)
+shared.Client.JumpPower:OnChanged(function(val)
 	local hum = GetHum(); if hum then hum.JumpPower = val; hum.JumpHeight = val end
 end)
 
@@ -108,23 +166,23 @@ end)
 --  LOOP FOV
 -- ═══════════════════════════════════════════
 local function StopLoopFov()
-	LoopFovConnection = SafeDisconnect(LoopFovConnection)
+	shared.Client.LoopFovConnection = SafeDisconnect(shared.Client.LoopFovConnection)
 end
 
 local function StartLoopFov()
 	StopLoopFov()
-	if not Toggles.LoopFOV.Value then return end
-	LoopFovConnection = RunService.Heartbeat:Connect(function()
-		if not Toggles.LoopFOV.Value then StopLoopFov() return end
-		Camera.FieldOfView = Options.FOV.Value
+	if not shared.Client.LoopFOV.Value then return end
+	shared.Client.LoopFovConnection = RunService.Heartbeat:Connect(function()
+		if not shared.Client.LoopFOV.Value then StopLoopFov() return end
+		Camera.FieldOfView = shared.Client.FOV.Value
 	end)
 end
 
-Toggles.LoopFOV:OnChanged(function(val)
+shared.Client.LoopFOV:OnChanged(function(val)
 	if val then StartLoopFov() else StopLoopFov(); TweenFOV(70) end
 end)
 
-Options.FOV:OnChanged(function(val)
+shared.Client.FOV:OnChanged(function(val)
 	TweenService:Create(Camera, TweenInfo.new(0.3), {FieldOfView = val}):Play()
 end)
 
@@ -132,7 +190,7 @@ end)
 --  NOCLIP
 -- ═══════════════════════════════════════════
 local function StopNoclip()
-	NoclipConnection = SafeDisconnect(NoclipConnection)
+	shared.Client.NoclipConnection = SafeDisconnect(shared.Client.NoclipConnection)
 	local char = GetCharacter()
 	if char then
 		for _, part in ipairs(char:GetDescendants()) do
@@ -143,9 +201,9 @@ end
 
 local function StartNoclip()
 	StopNoclip()
-	if not Toggles.Noclip.Value then return end
-	NoclipConnection = RunService.Stepped:Connect(function()
-		if not Toggles.Noclip.Value then StopNoclip() return end
+	if not shared.Client.Noclip.Value then return end
+	shared.Client.NoclipConnection = RunService.Stepped:Connect(function()
+		if not shared.Client.Noclip.Value then StopNoclip() return end
 		local char = GetCharacter()
 		if char then
 			for _, part in ipairs(char:GetDescendants()) do
@@ -155,7 +213,7 @@ local function StartNoclip()
 	end)
 end
 
-Toggles.Noclip:OnChanged(function(val)
+shared.Client.Noclip:OnChanged(function(val)
 	if val then StartNoclip() else StopNoclip() end
 end)
 
@@ -163,7 +221,7 @@ end)
 --  PAUSE [FE]
 -- ═══════════════════════════════════════════
 local function StopPause()
-	PauseConnection = SafeDisconnect(PauseConnection)
+	shared.Client.PauseConnection = SafeDisconnect(shared.Client.PauseConnection)
 	local hrp = GetHRP(); local hum = GetHum()
 	if hrp then
 		hrp.Anchored = false
@@ -174,7 +232,7 @@ end
 
 local function StartPause()
 	StopPause()
-	if not Toggles.PauseFE.Value then return end
+	if not shared.Client.PauseFE.Value then return end
 	local hrp = GetHRP(); local hum = GetHum()
 	if not hrp or not hum then return end
 	PauseSavedCFrame = hrp.CFrame
@@ -183,8 +241,8 @@ local function StartPause()
 	hrp.AssemblyAngularVelocity = Vector3.zero
 	SetHumanoidStates(hum, false)
 	hum:ChangeState(Enum.HumanoidStateType.Physics)
-	PauseConnection = RunService.Heartbeat:Connect(function()
-		if not Toggles.PauseFE.Value then StopPause() return end
+	shared.Client.PauseConnection = RunService.Heartbeat:Connect(function()
+		if not shared.Client.PauseFE.Value then StopPause() return end
 		local h = GetHRP()
 		if h then
 			h.Anchored = true
@@ -194,7 +252,7 @@ local function StartPause()
 	end)
 end
 
-Toggles.PauseFE:OnChanged(function(val)
+shared.Client.PauseFE:OnChanged(function(val)
 	if val then StartPause() else StopPause() end
 end)
 
@@ -202,7 +260,7 @@ end)
 --  RAINBOW TOOL
 -- ═══════════════════════════════════════════
 local function StopRainbowTool()
-	RainbowtoolCon = SafeDisconnect(RainbowtoolCon)
+	shared.Client.RainbowtoolCon = SafeDisconnect(shared.Client.RainbowtoolCon)
 	for part, color in pairs(RainbowToolOrigColors) do
 		if part and part.Parent then part.Color = color end
 	end
@@ -211,9 +269,9 @@ end
 
 local function StartRainbowTool()
 	StopRainbowTool()
-	if not Toggles.RainbowTool.Value then return end
-	RainbowtoolCon = RunService.Heartbeat:Connect(function()
-		if not Toggles.RainbowTool.Value then StopRainbowTool() return end
+	if not shared.Client.RainbowTool.Value then return end
+	shared.Client.RainbowtoolCon = RunService.Heartbeat:Connect(function()
+		if not shared.Client.RainbowTool.Value then StopRainbowTool() return end
 		local char = GetCharacter(); if not char then return end
 		local tool = nil
 		for _, child in ipairs(char:GetChildren()) do
@@ -230,7 +288,7 @@ local function StartRainbowTool()
 	end)
 end
 
-Toggles.RainbowTool:OnChanged(function(val)
+shared.Client.RainbowTool:OnChanged(function(val)
 	if val then StartRainbowTool() else StopRainbowTool() end
 end)
 
@@ -238,7 +296,7 @@ end)
 --  RAINBOW CHARACTER
 -- ═══════════════════════════════════════════
 local function StopRainbowChar()
-	RainbowcharCon = SafeDisconnect(RainbowcharCon)
+	shared.Client.RainbowcharCon = SafeDisconnect(shared.Client.RainbowcharCon)
 	for part, color in pairs(RainbowCharOrigColors) do
 		if part and part.Parent then part.Color = color end
 	end
@@ -247,9 +305,9 @@ end
 
 local function StartRainbowChar()
 	StopRainbowChar()
-	if not Toggles.RainbowCharacter.Value then return end
-	RainbowcharCon = RunService.Heartbeat:Connect(function()
-		if not Toggles.RainbowCharacter.Value then StopRainbowChar() return end
+	if not shared.Client.RainbowCharacter.Value then return end
+	shared.Client.RainbowcharCon = RunService.Heartbeat:Connect(function()
+		if not shared.Client.RainbowCharacter.Value then StopRainbowChar() return end
 		local char = GetCharacter(); if not char then return end
 		local parts = {}
 		for _, part in ipairs(char:GetDescendants()) do
@@ -264,7 +322,7 @@ local function StartRainbowChar()
 	end)
 end
 
-Toggles.RainbowCharacter:OnChanged(function(val)
+shared.Client.RainbowCharacter:OnChanged(function(val)
 	if val then StartRainbowChar() else StopRainbowChar() end
 end)
 
@@ -272,7 +330,7 @@ end)
 --  RTX
 -- ═══════════════════════════════════════════
 local function RTXSaveLightingProp(prop)
-	if RTXLightingSaved[prop] == nil then RTXLightingSaved[prop] = Lighting[prop] end
+	if shared.Client.RTXLightingSaved[prop] == nil then shared.Client.RTXLightingSaved[prop] = Lighting[prop] end
 end
 
 local function RTXAddLightingInstance(className, props)
@@ -283,8 +341,8 @@ local function RTXAddLightingInstance(className, props)
 end
 
 local function RTXApplyToPart(part)
-	if not part:IsA("BasePart") or RTXPartSaved[part] then return end
-	RTXPartSaved[part] = {Material=part.Material, Reflectance=part.Reflectance, CastShadow=part.CastShadow}
+	if not part:IsA("BasePart") or shared.Client.RTXPartSaved[part] then return end
+	shared.Client.RTXPartSaved[part] = {Material=part.Material, Reflectance=part.Reflectance, CastShadow=part.CastShadow}
 	part.Reflectance = 0.45; part.CastShadow = true
 	if part.Material == Enum.Material.SmoothPlastic or part.Material == Enum.Material.Plastic then
 		part.Material = Enum.Material.Glass
@@ -292,7 +350,7 @@ local function RTXApplyToPart(part)
 end
 
 local function RTXRemoveFromPart(part)
-	local saved = RTXPartSaved[part]; if not saved then return end
+	local saved = shared.Client.RTXPartSaved[part]; if not saved then return end
 	for prop, val in pairs(saved) do part[prop] = val end
 	RTXPartSaved[part] = nil
 end
@@ -322,28 +380,28 @@ local function ApplyRTX()
 	RTXAddLightingInstance("Atmosphere",            {Density=0.35, Offset=0.06, Color=Color3.fromRGB(199,215,255), Decay=Color3.fromRGB(106,112,125), Glare=0.35, Haze=1.8})
 	for _, part in ipairs(workspace:GetDescendants()) do RTXApplyToPart(part) end
 	RTXDescendantConn = workspace.DescendantAdded:Connect(function(obj)
-		if Toggles.RTX.Value then RTXApplyToPart(obj) end
+		if shared.Client.RTX.Value then RTXApplyToPart(obj) end
 	end)
 end
 
 local function RevertRTX()
 	RTXDescendantConn = SafeDisconnect(RTXDescendantConn)
-	for _, inst in ipairs(RTXLightingInstances) do if inst and inst.Parent then inst:Destroy() end end
-	RTXLightingInstances = {}
-	for prop, val in pairs(RTXLightingSaved) do Lighting[prop] = val end
-	RTXLightingSaved = {}
-	for part in pairs(RTXPartSaved) do RTXRemoveFromPart(part) end
-	RTXPartSaved = {}
+	for _, inst in ipairs(shared.Client.RTXLightingInstances) do if inst and inst.Parent then inst:Destroy() end end
+	shared.Client.RTXLightingInstances = {}
+	for prop, val in pairs(shared.Client.RTXLightingSaved) do Lighting[prop] = val end
+	shared.Client.RTXLightingSaved = {}
+	for part in pairs(shared.Client.RTXPartSaved) do RTXRemoveFromPart(part) end
+	shared.Client.RTXPartSaved = {}
 end
 
-Toggles.RTX:OnChanged(function(val)
+shared.Client.RTX:OnChanged(function(val)
 	if val then ApplyRTX() else RevertRTX() end
 end)
 
 -- ═══════════════════════════════════════════
 --  NO ZOOM LIMIT
 -- ═══════════════════════════════════════════
-Toggles.NoZoomLimit:OnChanged(function(val)
+shared.Client.NoZoomLimit:OnChanged(function(val)
 	pcall(function()
 		local PlayerModule = require(Player.PlayerScripts:WaitForChild("PlayerModule"))
 		local cameraModule = PlayerModule:GetCameras()
@@ -361,10 +419,10 @@ end)
 --  FLY (F to activate)
 -- ═══════════════════════════════════════════
 local function StopFly()
-	Flying = false; flyUp = false; flyDown = false
-	FlyConnection = SafeDisconnect(FlyConnection)
-	FlyInputBegan = SafeDisconnect(FlyInputBegan)
-	FlyInputEnded = SafeDisconnect(FlyInputEnded)
+	shared.Client.Flying = false; flyUp = false; flyDown = false
+	shared.Client.FlyConnection = SafeDisconnect(shared.Client.FlyConnection)
+	shared.Client.FlyInputBegan = SafeDisconnect(shared.Client.FlyInputBegan)
+	shared.Client.FlyInputEnded = SafeDisconnect(shared.Client.FlyInputEnded)
 	local hum = GetHum(); local hrp = GetHRP()
 	if hum then SetHumanoidStates(hum, true); hum:ChangeState(Enum.HumanoidStateType.Freefall) end
 	if hrp then
@@ -377,7 +435,7 @@ end
 
 local function StartFly()
 	StopFly()
-	if not Toggles.Fly.Value then return end
+	if not shared.Client.Fly.Value then return end
 
 	local function GetFlyDir()
 		local camCF = Camera.CFrame; local hum = GetHum()
@@ -388,26 +446,26 @@ local function StartFly()
 		return dir.Magnitude > 0.001 and dir.Unit or Vector3.zero
 	end
 
-	FlyConnection = RunService.Heartbeat:Connect(function()
-		if not Toggles.Fly.Value then StopFly() return end
-		if not Flying then return end
+	shared.Client.FlyConnection = RunService.Heartbeat:Connect(function()
+		if not shared.Client.Fly.Value then StopFly() return end
+		if not shared.Client.Flying then return end
 		local hrp = GetHRP(); local hum = GetHum()
 		if not hrp or not hum then return end
 		local bg = hrp:FindFirstChild("FlyBodyGyro"); local bv = hrp:FindFirstChild("FlyBodyVelocity")
 		if not bg or not bv then return end
 		hum:ChangeState(6); bg.CFrame = bg.CFrame:Lerp(Camera.CFrame, 0.2)
 		local dir = GetFlyDir()
-		TweenService:Create(bv, TweenInfo.new(0.15), {Velocity = dir * Options.FlySpeed.Value}):Play()
+		TweenService:Create(bv, TweenInfo.new(0.15), {Velocity = dir * shared.Client.FlySpeed.Value}):Play()
 		TweenFOV(dir ~= Vector3.zero and 100 or 70)
 	end)
 
-	FlyInputBegan = UIS.InputBegan:Connect(function(key, gp)
-		if gp or not Toggles.Fly.Value then return end
+	shared.Client.FlyInputBegan = UIS.InputBegan:Connect(function(key, gp)
+		if gp or not shared.Client.Fly.Value then return end
 		if key.KeyCode == Enum.KeyCode.F then
 			local hrp = GetHRP(); local hum = GetHum()
 			if not hrp or not hum then return end
-			if not Flying then
-				Flying = true; SetHumanoidStates(hum, false); hum:ChangeState(6)
+			if not shared.Client.Flying then
+				shared.Client.Flying = true; SetHumanoidStates(hum, false); hum:ChangeState(6)
 				local snd = hrp:FindFirstChild("Running"); if snd then snd.Volume = 0 end
 				local bg = Instance.new("BodyGyro")
 				bg.Name="FlyBodyGyro"; bg.MaxTorque=Vector3.new(4e5,4e5,4e5)
@@ -416,25 +474,25 @@ local function StartFly()
 				bv.Name="FlyBodyVelocity"; bv.Velocity=Vector3.zero
 				bv.MaxForce=Vector3.new(1e5,1e5,1e5); bv.Parent=hrp
 			else
-				Flying=false; flyUp=false; flyDown=false
+				shared.Client.Flying = false; shared.Client.flyUp = false; shared.Client.flyDown = false
 				SetHumanoidStates(hum, true); hum:ChangeState(8)
 				local snd=hrp:FindFirstChild("Running"); if snd then snd.Volume=0.65 end
 				local bv=hrp:FindFirstChild("FlyBodyVelocity"); if bv then bv:Destroy() end
 				local bg=hrp:FindFirstChild("FlyBodyGyro");     if bg then bg:Destroy() end
 				TweenFOV(70)
 			end
-		elseif key.KeyCode == Enum.KeyCode.Space     then flyUp   = true
-		elseif key.KeyCode == Enum.KeyCode.LeftShift then flyDown = true
+		elseif key.KeyCode == Enum.KeyCode.Space     then shared.Client.flyUp   = true
+		elseif key.KeyCode == Enum.KeyCode.LeftShift then shared.Client.flyDown = true
 		end
 	end)
 
-	FlyInputEnded = UIS.InputEnded:Connect(function(key)
-		if key.KeyCode == Enum.KeyCode.Space     then flyUp   = false end
-		if key.KeyCode == Enum.KeyCode.LeftShift then flyDown = false end
+	shared.Client.FlyInputEnded = UIS.InputEnded:Connect(function(key)
+		if key.KeyCode == Enum.KeyCode.Space     then shared.Client.flyUp   = false end
+		if key.KeyCode == Enum.KeyCode.LeftShift then shared.Client.flyDown = false end
 	end)
 end
 
-Toggles.Fly:OnChanged(function(val)
+shared.Client.Fly:OnChanged(function(val)
 	if val then StartFly() else StopFly() end
 end)
 
@@ -442,10 +500,10 @@ end)
 --  CFRAME FLY (G to activate)
 -- ═══════════════════════════════════════════
 local function StopCframeFly()
-	CFlying=false; cfUp=false; cfDown=false
-	CframeFlyConnection = SafeDisconnect(CframeFlyConnection)
-	CframeFlyInputBegan = SafeDisconnect(CframeFlyInputBegan)
-	CframeFlyInputEnded = SafeDisconnect(CframeFlyInputEnded)
+	shared.Client.CFlying=false; shared.Client.cfUp=false; shared.Client.cfDown=false
+	shared.Client.CframeFlyConnection = SafeDisconnect(shared.Client.CframeFlyConnection)
+	shared.Client.CframeFlyInputBegan = SafeDisconnect(shared.Client.CframeFlyInputBegan)
+	shared.Client.CframeFlyInputEnded = SafeDisconnect(shared.Client.CframeFlyInputEnded)
 	local hrp = GetHRP(); if hrp then hrp.Anchored = false end
 	SetCharacterCollision(true)
 	local hum = GetHum()
@@ -455,11 +513,11 @@ end
 
 local function StartCframeFly()
 	StopCframeFly()
-	if not Toggles.CFly.Value then return end
+	if not shared.Client.CFly.Value then return end
 
-	CframeFlyConnection = RunService.RenderStepped:Connect(function(dt)
-		if not Toggles.CFly.Value then StopCframeFly() return end
-		if not CFlying then return end
+	shared.Client.CframeFlyConnection = RunService.RenderStepped:Connect(function(dt)
+		if not shared.Client.CFly.Value then StopCframeFly() return end
+		if not shared.Client.CFlying then return end
 		local hrp = GetHRP(); local hum = GetHum()
 		if not hrp or not hum then return end
 		hrp.Anchored = true; SetCharacterCollision(false)
@@ -475,35 +533,35 @@ local function StartCframeFly()
 			+ camCF.RightVector*md:Dot(camCF.RightVector)
 			+ Vector3.new(0, (cfUp and 1 or 0)-(cfDown and 1 or 0), 0)
 		local moving = dir.Magnitude > 0.001; if moving then dir = dir.Unit end
-		hrp.CFrame = CFrame.new(hrp.Position + dir*Options.FlySpeed.Value*dt) * (hrp.CFrame - hrp.Position)
+		hrp.CFrame = CFrame.new(hrp.Position + dir*shared.Client.FlySpeed.Value*dt) * (hrp.CFrame - hrp.Position)
 		TweenFOV(moving and 100 or 70)
 	end)
 
-	CframeFlyInputBegan = UIS.InputBegan:Connect(function(key, gp)
-		if gp or not Toggles.CFly.Value then return end
+	shared.Client.CframeFlyInputBegan = UIS.InputBegan:Connect(function(key, gp)
+		if gp or not shared.Client.CFly.Value then return end
 		if key.KeyCode == Enum.KeyCode.G then
 			local hrp = GetHRP(); local hum = GetHum()
 			if not hrp or not hum then return end
-			if not CFlying then
-				CFlying=true; SetHumanoidStates(hum, false); hum:ChangeState(6)
+			if not shared.Client.CFlying then
+				shared.Client.CFlying=true; SetHumanoidStates(hum, false); hum:ChangeState(6)
 				hrp.Anchored=true; SetCharacterCollision(false)
 			else
-				CFlying=false; cfUp=false; cfDown=false
+				shared.Client.CFlying=false; shared.Client.cfUp=false; shared.Client.cfDown=false
 				SetHumanoidStates(hum, true); hum:ChangeState(8)
 				hrp.Anchored=false; SetCharacterCollision(true); TweenFOV(70)
 			end
-		elseif key.KeyCode == Enum.KeyCode.Space     then cfUp   = true
-		elseif key.KeyCode == Enum.KeyCode.LeftShift then cfDown = true
+		elseif key.KeyCode == Enum.KeyCode.Space     then shared.Client.cfUp   = true
+		elseif key.KeyCode == Enum.KeyCode.LeftShift then shared.Client.cfDown = true
 		end
 	end)
 
-	CframeFlyInputEnded = UIS.InputEnded:Connect(function(key)
-		if key.KeyCode == Enum.KeyCode.Space     then cfUp   = false end
-		if key.KeyCode == Enum.KeyCode.LeftShift then cfDown = false end
+	shared.Client.CframeFlyInputEnded = UIS.InputEnded:Connect(function(key)
+		if key.KeyCode == Enum.KeyCode.Space     then shared.Client.cfUp   = false end
+		if key.KeyCode == Enum.KeyCode.LeftShift then shared.Client.cfDown = false end
 	end)
 end
 
-Toggles.CFly:OnChanged(function(val)
+shared.Client.CFly:OnChanged(function(val)
 	if val then StartCframeFly() else StopCframeFly() end
 end)
 
@@ -511,15 +569,15 @@ end)
 --  ANTI AFK
 -- ═══════════════════════════════════════════
 local function StopAntiAFK()
-	AntiAFKConnection = SafeDisconnect(AntiAFKConnection)
+	shared.Client.AntiAFKConnection = SafeDisconnect(AntiAFKConnection)
 end
 
 local function StartAntiAFK()
 	StopAntiAFK()
-	if not Toggles.AntiAFK.Value then return end
+	if not shared.Client.AntiAFK.Value then return end
 	local elapsed = 0
-	AntiAFKConnection = RunService.Heartbeat:Connect(function(dt)
-		if not Toggles.AntiAFK.Value then StopAntiAFK() return end
+	shared.Client.AntiAFKConnection = RunService.Heartbeat:Connect(function(dt)
+		if not shared.Client.AntiAFK.Value then StopAntiAFK() return end
 		elapsed += dt
 		if elapsed >= 900 then
 			elapsed = 0
@@ -530,13 +588,13 @@ local function StartAntiAFK()
 end
 
 Player.Idled:Connect(function()
-	if Toggles.AntiAFK.Value then
+	if shared.Client.AntiAFK.Value then
 		VirtualUser:CaptureController()
 		VirtualUser:ClickButton2(Vector2.zero)
 	end
 end)
 
-Toggles.AntiAFK:OnChanged(function(val)
+shared.Client.AntiAFK:OnChanged(function(val)
 	if val then StartAntiAFK() else StopAntiAFK() end
 end)
 
@@ -544,19 +602,19 @@ end)
 --  INFINITE JUMP
 -- ═══════════════════════════════════════════
 local function StopInfJump()
-	InfJumpConn = SafeDisconnect(InfJumpConn)
+	shared.Client.InfJumpConn = SafeDisconnect(shared.Client.InfJumpConn)
 end
 
 local function StartInfJump()
 	StopInfJump()
-	if not Toggles.InfiniteJump.Value then return end
-	InfJumpConn = UIS.JumpRequest:Connect(function()
-		if not Toggles.InfiniteJump.Value then StopInfJump() return end
+	if not shared.Client.InfiniteJump.Value then return end
+	shared.Client.InfJumpConn = UIS.JumpRequest:Connect(function()
+		if not shared.Client.InfiniteJump.Value then StopInfJump() return end
 		local h = GetHum(); if h then h:ChangeState(Enum.HumanoidStateType.Jumping) end
 	end)
 end
 
-Toggles.InfiniteJump:OnChanged(function(val)
+shared.Client.InfiniteJump:OnChanged(function(val)
 	if val then StartInfJump() else StopInfJump() end
 end)
 
@@ -575,29 +633,29 @@ local function SetFreeze(enabled)
 	end
 end
 
-Toggles.Freeze:OnChanged(function(val) SetFreeze(val) end)
+shared.Client.Freeze:OnChanged(function(val) SetFreeze(val) end)
 
 -- ═══════════════════════════════════════════
 --  USE VELOCITY
 -- ═══════════════════════════════════════════
 local function StopUseVelocity()
-	UseVelocityConnection = SafeDisconnect(UseVelocityConnection)
+	shared.Client.UseVelocityConnection = SafeDisconnect(shared.Client.UseVelocityConnection)
 end
 
 local function StartUseVelocity()
 	StopUseVelocity()
-	if not Toggles.Velocity.Value then return end
-	UseVelocityConnection = RunService.Heartbeat:Connect(function(dt)
-		if not Toggles.Velocity.Value then StopUseVelocity() return end
+	if not shared.Client.Velocity.Value then return end
+	shared.Client.UseVelocityConnection = RunService.Heartbeat:Connect(function(dt)
+		if not shared.Client.Velocity.Value then StopUseVelocity() return end
 		local hrp = GetHRP(); local hum = GetHum()
 		if not hrp or not hum then return end
 		local md = hum.MoveDirection
 		if md.Magnitude < 0.01 then return end
-		hrp.CFrame = hrp.CFrame + md * Options.VelocitySpeed.Value * dt
+		hrp.CFrame = hrp.CFrame + md * shared.Client.VelocitySpeed.Value * dt
 	end)
 end
 
-Toggles.Velocity:OnChanged(function(val)
+shared.Client.Velocity:OnChanged(function(val)
 	if val then StartUseVelocity() else StopUseVelocity() end
 end)
 
@@ -605,27 +663,27 @@ end)
 --  CAR SPIN
 -- ═══════════════════════════════════════════
 local function StopSpin()
-	SpinConnection = SafeDisconnect(SpinConnection)
+	shared.Client.SpinConnection = SafeDisconnect(SpinConnection)
 end
 
 local function StartSpin()
 	StopSpin()
-	if not Toggles.CarSpin.Value then return end
+	if not shared.Client.CarSpin.Value then return end
 	local hrp = GetHRP(); local hum = GetHum()
 	if not hrp or not hum then return end
 	local spinSpeed = 0
-	SpinConnection = RunService.RenderStepped:Connect(function(dt)
-		if not Toggles.CarSpin.Value then StopSpin() return end
+	shared.Client.SpinConnection = RunService.RenderStepped:Connect(function(dt)
+		if not shared.Client.CarSpin.Value then StopSpin() return end
 		if not hrp.Parent then StopSpin() return end
 		spinSpeed += dt * 2
-		local rotation = CFrame.Angles(0, math.rad(spinSpeed * Options.CarSpinSpeed.Value), 0)
+		local rotation = CFrame.Angles(0, math.rad(spinSpeed * shared.Client.CarSpinSpeed.Value), 0)
 		local seat = GetSeat()
 		if seat then seat.CFrame = seat.CFrame * rotation
 		else hrp.CFrame = hrp.CFrame * rotation end
 	end)
 end
 
-Toggles.CarSpin:OnChanged(function(val)
+shared.Client.CarSpin:OnChanged(function(val)
 	if val then StartSpin() else StopSpin() end
 end)
 
@@ -633,18 +691,18 @@ end)
 --  BOUNCY CAR
 -- ═══════════════════════════════════════════
 local function StopBouncy()
-	BounceConnection = SafeDisconnect(BounceConnection)
+	shared.Client.BounceConnection = SafeDisconnect(shared.Client.BounceConnection)
 end
 
 local function StartBouncy()
 	StopBouncy()
-	if not Toggles.BouncyCar.Value then return end
+	if not shared.Client.BouncyCar.Value then return end
 	local hrp = GetHRP(); local hum = GetHum()
 	if not hrp or not hum then return end
 	local bounceTimer = 0; local isGoingUp = true
 	local upVelocity = 80; local downVelocity = -100
-	BounceConnection = RunService.Heartbeat:Connect(function(dt)
-		if not Toggles.BouncyCar.Value then StopBouncy() return end
+	shared.Client.BounceConnection = RunService.Heartbeat:Connect(function(dt)
+		if not shared.Client.BouncyCar.Value then StopBouncy() return end
 		if not hrp.Parent then StopBouncy() return end
 		bounceTimer += dt
 		local targetPart = GetSeat() or hrp
@@ -659,7 +717,7 @@ local function StartBouncy()
 	end)
 end
 
-Toggles.BouncyCar:OnChanged(function(val)
+shared.Client.BouncyCar:OnChanged(function(val)
 	if val then StartBouncy() else StopBouncy() end
 end)
 
@@ -667,27 +725,27 @@ end)
 --  FLING CAR (seated)
 -- ═══════════════════════════════════════════
 local function StopFlingCar()
-	FlingCarConnection = SafeDisconnect(FlingCarConnection)
+	shared.Client.FlingCarConnection = SafeDisconnect(shared.Client.FlingCarConnection)
 end
 
 local function StartFlingCar()
 	StopFlingCar()
-	if not Toggles.FlingCar.Value then return end
+	if not shared.Client.FlingCar.Value then return end
 	local hrp = GetHRP(); local hum = GetHum()
 	if not hrp or not hum then return end
 	local seat = GetSeat()
 	if not seat then
-		Toggles.FlingCar:SetValue(false)
+		shared.Client.FlingCar:SetValue(false)
 		return
 	end
 	local spinSpeed, crazyTimer, phase = 0, 0, 1
 	local skyPower = 0
-	FlingCarConnection = RunService.Heartbeat:Connect(function(dt)
-		if not Toggles.FlingCar.Value then StopFlingCar() return end
+	shared.Client.FlingCarConnection = RunService.Heartbeat:Connect(function(dt)
+		if not shared.Client.FlingCar.Value then StopFlingCar() return end
 		if not hum.Sit or not hum.SeatPart then StopFlingCar() return end
 		seat = hum.SeatPart
 		crazyTimer += dt
-		local strength = Options.CarFlingStrength.Value
+		local strength = shared.Client.CarFlingStrength.Value
 		if phase == 1 then
 			spinSpeed += dt * 20
 			seat.AssemblyAngularVelocity = Vector3.new(math.random(-50,50), spinSpeed*30, math.random(-50,50))
@@ -706,7 +764,7 @@ local function StartFlingCar()
 	end)
 end
 
-Toggles.FlingCar:OnChanged(function(val)
+shared.Client.FlingCar:OnChanged(function(val)
 	if val then StartFlingCar() else StopFlingCar() end
 end)
 
@@ -714,10 +772,10 @@ end)
 --  CAR FLY (F to activate, uses CarFlying)
 -- ═══════════════════════════════════════════
 local function StopCarFly()
-	CarFlying = false
-	CarFlyConnection = SafeDisconnect(CarFlyConnection)
-	CarFlyInputBegan = SafeDisconnect(CarFlyInputBegan)
-	CarFlyInputEnded = SafeDisconnect(CarFlyInputEnded)
+	shared.Client.CarFlying = false
+	shared.Client.CarFlyConnection = SafeDisconnect(shared.Client.CarFlyConnection)
+	shared.Client.CarFlyInputBegan = SafeDisconnect(shared.Client.CarFlyInputBegan)
+	shared.Client.CarFlyInputEnded = SafeDisconnect(shared.Client.CarFlyInputEnded)
 	local hrp = GetHRP()
 	if hrp then
 		local bv = hrp:FindFirstChild("CarFlyBV"); if bv then bv:Destroy() end
@@ -730,13 +788,13 @@ end
 
 local function StartCarFly()
 	StopCarFly()
-	if not Toggles.CarFly.Value then return end
+	if not shared.Client.CarFly.Value then return end
 	local hrp = GetHRP(); local hum = GetHum()
 	if not hrp or not hum then return end
 
-	CarFlyConnection = RunService.Heartbeat:Connect(function()
-		if not Toggles.CarFly.Value then StopCarFly() return end
-		if not CarFlying then return end
+	shared.Client.CarFlyConnection = RunService.Heartbeat:Connect(function()
+		if not shared.Client.CarFly.Value then StopCarFly() return end
+		if not shared.Client.CarFlying then return end
 		local bv = hrp:FindFirstChild("CarFlyBV")
 		local bg = hrp:FindFirstChild("CarFlyBG")
 		if not bv or not bg then return end
@@ -744,22 +802,22 @@ local function StartCarFly()
 		local dir = camCF.LookVector*md:Dot(camCF.LookVector) + camCF.RightVector*md:Dot(camCF.RightVector)
 		local moving = dir.Magnitude > 0.001; if moving then dir = dir.Unit end
 		bg.CFrame = bg.CFrame:Lerp(camCF, 0.2)
-		TweenService:Create(bv, TweenInfo.new(0.15), {Velocity = dir * Options.CarFlySpeed.Value}):Play()
+		TweenService:Create(bv, TweenInfo.new(0.15), {Velocity = dir * shared.Client.CarFlySpeed.Value}):Play()
 		TweenFOV(moving and 100 or 70)
 	end)
 
-	CarFlyInputBegan = UIS.InputBegan:Connect(function(key, gp)
-		if gp or not Toggles.CarFly.Value then return end
+	shared.Client.CarFlyInputBegan = UIS.InputBegan:Connect(function(key, gp)
+		if gp or not shared.Client.CarFly.Value then return end
 		if key.KeyCode == Enum.KeyCode.F then
-			if not CarFlying then
-				CarFlying = true
+			if not shared.Client.CarFlying then
+				shared.Client.CarFlying = true
 				SetHumanoidStates(hum, false); hum:ChangeState(6)
 				local bv = Instance.new("BodyVelocity")
 				bv.Name="CarFlyBV"; bv.Velocity=Vector3.zero; bv.MaxForce=Vector3.new(1e5,1e5,1e5); bv.Parent=hrp
 				local bg = Instance.new("BodyGyro")
 				bg.Name="CarFlyBG"; bg.MaxTorque=Vector3.new(4e5,4e5,4e5); bg.P=2e4; bg.D=100; bg.CFrame=Camera.CFrame; bg.Parent=hrp
 			else
-				CarFlying = false
+				shared.Client.CarFlying = false
 				SetHumanoidStates(hum, true); hum:ChangeState(8)
 				local bv=hrp:FindFirstChild("CarFlyBV"); if bv then bv:Destroy() end
 				local bg=hrp:FindFirstChild("CarFlyBG"); if bg then bg:Destroy() end
@@ -769,7 +827,7 @@ local function StartCarFly()
 	end)
 end
 
-Toggles.CarFly:OnChanged(function(val)
+shared.Client.CarFly:OnChanged(function(val)
 	if val then StartCarFly() else StopCarFly() end
 end)
 
@@ -777,25 +835,25 @@ end)
 --  CAR BOOST (hold B)
 -- ═══════════════════════════════════════════
 local function StopBoost()
-	BoostConnection = SafeDisconnect(BoostConnection)
-	BoostInputBegan = SafeDisconnect(BoostInputBegan)
-	BoostInputEnded = SafeDisconnect(BoostInputEnded)
+	shared.Client.BoostConnection = SafeDisconnect(shared.Client.BoostConnection)
+	shared.Client.BoostInputBegan = SafeDisconnect(shared.Client.BoostInputBegan)
+	shared.Client.BoostInputEnded = SafeDisconnect(shared.Client.BoostInputEnded)
 end
 
 local function StartBoost()
 	StopBoost()
-	if not Toggles.CarBoost.Value then return end
+	if not shared.Client.CarBoost.Value then return end
 	local hum = GetHum(); if not hum then return end
 	local boosting = false
-	BoostInputBegan = UIS.InputBegan:Connect(function(input, gp)
+	shared.Client.BoostInputBegan = UIS.InputBegan:Connect(function(input, gp)
 		if gp then return end
 		if input.KeyCode == Enum.KeyCode.B then boosting = true end
 	end)
-	BoostInputEnded = UIS.InputEnded:Connect(function(input)
+	shared.Client.BoostInputEnded = UIS.InputEnded:Connect(function(input)
 		if input.KeyCode == Enum.KeyCode.B then boosting = false end
 	end)
-	BoostConnection = RunService.Heartbeat:Connect(function()
-		if not Toggles.CarBoost.Value then StopBoost() return end
+	shared.Client.BoostConnection = RunService.Heartbeat:Connect(function()
+		if not shared.Client.CarBoost.Value then StopBoost() return end
 		if not boosting then return end
 		local seat = GetSeat(); if not seat or not seat.Parent then return end
 		local look = seat.CFrame.LookVector; local vel = seat.AssemblyLinearVelocity
@@ -804,7 +862,7 @@ local function StartBoost()
 	end)
 end
 
-Toggles.CarBoost:OnChanged(function(val)
+shared.Client.CarBoost:OnChanged(function(val)
 	if val then StartBoost() else StopBoost() end
 end)
 
@@ -812,15 +870,15 @@ end)
 --  CAR FLINGER (hover + click)
 -- ═══════════════════════════════════════════
 local function StopHovering()
-	HoverConnection    = SafeDisconnect(HoverConnection)
-	FlingcarConnection = SafeDisconnect(FlingcarConnection)
+	shared.Client.HoverConnection    = SafeDisconnect(shared.Client.HoverConnection)
+	shared.Client.FlingcarConnection = SafeDisconnect(shared.Client.FlingcarConnection)
 	if HoverHighlight then HoverHighlight:Destroy(); HoverHighlight = nil end
 	HoveredCar = nil
 end
 
 local function StartHovering()
 	StopHovering()
-	if not Toggles.CarFlinger.Value then return end
+	if not shared.Client.CarFlinger.Value then return end
 	local hrp = GetHRP(); local hum = GetHum()
 	if not hrp or not hum then return end
 	local Mouse = Player:GetMouse()
@@ -870,7 +928,7 @@ local function StartHovering()
 		end
 		local conn
 		conn = RunService.Heartbeat:Connect(function(dt)
-			if not Toggles.CarFlinger.Value or elapsed >= 1.5 then
+			if not shared.Client.CarFlinger.Value or elapsed >= 1.5 then
 				conn:Disconnect()
 				for _, p in ipairs(char:GetDescendants()) do
 					if p:IsA("BasePart") then p.CanCollide = true end
@@ -887,7 +945,7 @@ local function StartHovering()
 	end
 
 	HoverConnection = RunService.RenderStepped:Connect(function()
-		if not Toggles.CarFlinger.Value then StopHovering() return end
+		if not shared.Client.CarFlinger.Value then StopHovering() return end
 		local target = Mouse.Target
 		if target then
 			local car = GetCarFromInstance(target)
@@ -897,62 +955,16 @@ local function StartHovering()
 	end)
 
 	FlingcarConnection = Mouse.Button1Down:Connect(function()
-		if not Toggles.CarFlinger.Value or not HoveredCar then return end
+		if not shared.Client.CarFlinger.Value or not HoveredCar then return end
 		local car = HoveredCar
 		ClearHighlight(car); HoveredCar = nil
 		FlingTargetCar(car)
 	end)
 end
 
-Toggles.CarFlinger:OnChanged(function(val)
+shared.Client.CarFlinger:OnChanged(function(val)
 	if val then StartHovering() else StopHovering() end
 end)
-
--- ═══════════════════════════════════════════
---  GET CAR
--- ═══════════════════════════════════════════
-local GetCarButton = CarBox:AddButton({ Text = 'Get Car', Func = function()
-	local hrp = GetHRP(); if not hrp then return end
-	local closest, closestDist = nil, math.huge
-	for _, v in ipairs(workspace:GetDescendants()) do
-		if v:IsA("VehicleSeat") then
-			local dist = (v.Position - hrp.Position).Magnitude
-			if dist < closestDist then closestDist=dist; closest=v end
-		end
-	end
-	if not closest then return end
-	hrp.CFrame = CFrame.new(closest.Position + Vector3.new(0, 5, 0))
-	task.wait(0.1)
-	local hum = GetHum(); if hum then hum:ChangeState(Enum.HumanoidStateType.Landed) end
-end })
-
--- ═══════════════════════════════════════════
---  DESPAWN CAR
--- ═══════════════════════════════════════════
-local DespawnCarButton = CarBox:AddButton({ Text = 'Despawn Car', Func = function()
-	local hum = GetHum(); if not hum then return end
-	local seat = GetSeat(); if not seat then return end
-	local car = seat:FindFirstAncestorOfClass("Model"); if car then car:Destroy() end
-end })
-
--- ═══════════════════════════════════════════
---  GET ALL CARS
--- ═══════════════════════════════════════════
-local GetAllCarsButton = CarBox:AddButton({ Text = 'Get All Cars', Func = function()
-	local hrp = GetHRP(); if not hrp then return end
-	local cars = {}
-	for _, v in ipairs(workspace:GetDescendants()) do
-		if v:IsA("VehicleSeat") then
-			local model = v:FindFirstAncestorOfClass("Model")
-			if model and not table.find(cars, model) then table.insert(cars, model) end
-		end
-	end
-	for i, car in ipairs(cars) do
-		task.delay(i * 0.1, function()
-			car:PivotTo(hrp.CFrame * CFrame.new(0, 0, -(i * 8)))
-		end)
-	end
-end })
 
 -- ═══════════════════════════════════════════
 --  CHARACTER RESPAWN
@@ -964,31 +976,31 @@ local function OnCharacterAdded(newChar)
 
 	local hum = GetHum()
 	if hum then
-		hum.WalkSpeed = Options.Walkspeed.Value
-		hum.JumpPower = Options.JumpPower.Value
+		hum.WalkSpeed = shared.Client.Walkspeed.Value
+		hum.JumpPower = shared.Client.JumpPower.Value
 	end
 
-	if Toggles.LoopWalkspeed.Value    then StartLoopWS()       end
-	if Toggles.LoopJumpPower.Value    then StartLoopJP()       end
-	if Toggles.LoopFOV.Value          then StartLoopFov()      end
-	if Toggles.Noclip.Value           then StartNoclip()       end
-	if Toggles.AntiAFK.Value          then StartAntiAFK()      end
-	if Toggles.InfiniteJump.Value     then StartInfJump()      end
-	if Toggles.Velocity.Value         then StartUseVelocity()  end
-	if Toggles.PauseFE.Value          then StartPause()        end
-	if Toggles.RainbowTool.Value      then StartRainbowTool()  end
-	if Toggles.RainbowCharacter.Value then StartRainbowChar()  end
-	if Toggles.Naked.Value            then task.delay(0.5, ApplyNaked) end
-	if Toggles.Fly.Value  then Flying=false;  flyUp=false;  flyDown=false;  StartFly()        end
-	if Toggles.CFly.Value then CFlying=false; cfUp=false;   cfDown=false;   StartCframeFly()  end
+	if shared.Client.LoopWalkspeed.Value    then StartLoopWS()       end
+	if shared.Client.LoopJumpPower.Value    then StartLoopJP()       end
+	if shared.Client.LoopFOV.Value          then StartLoopFov()      end
+	if shared.Client.Noclip.Value           then StartNoclip()       end
+	if shared.Client.AntiAFK.Value          then StartAntiAFK()      end
+	if shared.Client.InfiniteJump.Value     then StartInfJump()      end
+	if shared.Client.Velocity.Value         then StartUseVelocity()  end
+	if shared.Client.PauseFE.Value          then StartPause()        end
+	if shared.Client.RainbowTool.Value      then StartRainbowTool()  end
+	if shared.Client.RainbowCharacter.Value then StartRainbowChar()  end
+	if shared.Client.Naked.Value            then task.delay(0.5, ApplyNaked) end
+	if shared.Client.Fly.Value  then Flying=false;  flyUp=false;  flyDown=false;  StartFly()        end
+	if shared.Client.CFly.Value then CFlying=false; cfUp=false;   cfDown=false;   StartCframeFly()  end
 
 	-- car handlers
 	CarFlying = false
-	if Toggles.CarSpin.Value    then StartSpin()       end
-	if Toggles.CarFly.Value     then StartCarFly()     end
-	if Toggles.BouncyCar.Value  then StartBouncy()     end
-	if Toggles.CarBoost.Value   then StartBoost()      end
-	if Toggles.CarFlinger.Value then StartHovering()   end
+	if shared.Client.CarSpin.Value    then StartSpin()       end
+	if shared.Client.CarFly.Value     then StartCarFly()     end
+	if shared.Client.BouncyCar.Value  then StartBouncy()     end
+	if shared.Client.CarBoost.Value   then StartBoost()      end
+	if shared.Client.CarFlinger.Value then StartHovering()   end
 end
 
 Player.CharacterAdded:Connect(function(char)
@@ -1001,6 +1013,6 @@ task.spawn(function()
 end)
 
 -- persistent on load
-if Toggles.AntiAFK.Value then StartAntiAFK() end
-if Toggles.LoopFOV.Value then StartLoopFov() end
-if Toggles.RTX.Value     then ApplyRTX()     end
+if shared.Client.AntiAFK.Value then StartAntiAFK() end
+if shared.Client.LoopFOV.Value then StartLoopFov() end
+if shared.Client.RTX.Value     then ApplyRTX()     end
