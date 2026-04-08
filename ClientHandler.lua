@@ -1,10 +1,9 @@
 -- Client Handler - v2
+print("[Comet]: Starting client")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local VirtualUser = game:GetService("VirtualUser")
-
-local Player = game.Players.LocalPlayer
 
 local function GetCharacter() return Player.Character end
 local function GetHRP()
@@ -82,6 +81,8 @@ end
 shared.Client.Naked:OnChanged(function(val)
 	if val then ApplyNaked() else RevertNaked() end
 end)
+
+local Player = game.Players:WaitForChild(LocalPlayer, 2)
 
 -- ═══════════════════════════════════════════
 --  CHARACTER MATERIALS
