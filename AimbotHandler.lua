@@ -233,7 +233,6 @@ local function ApplyMouseMove(targetWorldPos, dt)
 end
 
 local function UpdateFOVCircle()
-	print("Updating FOV circle...")
 	if not fovCircle then 
 		fovCircle = shared.Aim.fovCircle
 	end
