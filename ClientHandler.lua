@@ -409,7 +409,7 @@ local function RevertRTX()
 end
 
 shared.Client.RTX:OnChanged(function()
-	if shared.Client.RTX.Value then ApplyRTX() else RevertRTX() end
+	-- if shared.Client.RTX.Value then ApplyRTX() else RevertRTX() end
 end)
 
 -- ═══════════════════════════════════════════
