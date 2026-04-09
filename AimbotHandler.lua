@@ -314,6 +314,7 @@ local function MainLoop()
 end
 
 task.delay(1, function()
+	print("Updating aimbot...")
 	fovCircle = shared.Aim.fovCircle
 	UpdateSettings()
 	RunService.RenderStepped:Connect(UpdateFOVCircle)
