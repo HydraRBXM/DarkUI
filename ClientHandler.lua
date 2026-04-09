@@ -4,6 +4,7 @@ local UIS = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local VirtualUser = game:GetService("VirtualUser")
 local Camera = workspace.CurrentCamera
+local Lighting = game:GetService("Lighting")
 
 local Player = game.Players.LocalPlayer
 
@@ -187,7 +188,7 @@ local function StartLoopFov()
 	if not shared.Client.LoopFOV.Value then return end
 	shared.Client.LoopFovConnection = RunService.Heartbeat:Connect(function()
 		if not shared.Client.LoopFOV.Value then StopLoopFov() return end
-		Camera.FieldOfView = shared.Client.FOV.Value
+		Camera.FieldOfView = shared.Client.Fov.Value
 	end)
 end
 
@@ -274,10 +275,10 @@ end)
 -- ═══════════════════════════════════════════
 local function StopRainbowTool()
 	shared.Client.RainbowtoolCon = SafeDisconnect(shared.Client.RainbowtoolCon)
-	for part, color in pairs(RainbowToolOrigColors) do
+	for part, color in pairs(shared.Client.RainbowToolOrigColors) do
 		if part and part.Parent then part.Color = color end
 	end
-	RainbowToolOrigColors = {}
+	shared.Client.RainbowToolOrigColors = {}
 end
 
 local function StartRainbowTool()
@@ -290,11 +291,11 @@ local function StartRainbowTool()
 		for _, child in ipairs(char:GetChildren()) do
 			if child:IsA("Tool") then tool = child break end
 		end
-		if not tool then RainbowToolOrigColors = {} return end
+		if not tool then shared.Client.RainbowToolOrigColors = {} return end
 		local hue = (tick() * 0.4) % 1
 		for _, part in ipairs(tool:GetDescendants()) do
 			if part:IsA("BasePart") then
-				if not RainbowToolOrigColors[part] then RainbowToolOrigColors[part] = part.Color end
+				if not shared.Client.RainbowToolOrigColors[part] then shared.Client.RainbowToolOrigColors[part] = part.Color end
 				part.Color = Color3.fromHSV(hue, 0.9, 1)
 			end
 		end
@@ -310,10 +311,10 @@ end)
 -- ═══════════════════════════════════════════
 local function StopRainbowChar()
 	shared.Client.RainbowcharCon = SafeDisconnect(shared.Client.RainbowcharCon)
-	for part, color in pairs(RainbowCharOrigColors) do
+	for part, color in pairs(shared.Client.RainbowCharOrigColors) do
 		if part and part.Parent then part.Color = color end
 	end
-	RainbowCharOrigColors = {}
+	shared.Client.RainbowCharOrigColors = {}
 end
 
 local function StartRainbowChar()
@@ -329,7 +330,7 @@ local function StartRainbowChar()
 		local total   = math.max(#parts, 1)
 		local baseHue = (tick() * 0.35) % 1
 		for i, part in ipairs(parts) do
-			if not RainbowCharOrigColors[part] then RainbowCharOrigColors[part] = part.Color end
+			if not shared.Client.RainbowCharOrigColors[part] then shared.Client.RainbowCharOrigColors[part] = part.Color end
 			part.Color = Color3.fromHSV((baseHue + (i/total)*0.5) % 1, 0.95, 1)
 		end
 	end)
