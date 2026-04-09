@@ -5,8 +5,8 @@ local TweenService = game:GetService("TweenService")
 local VirtualUser = game:GetService("VirtualUser")
 local Camera = workspace.CurrentCamera
 local Lighting = game:GetService("Lighting")
-
-local Player = game.Players.LocalPlayer
+local players = game:GetService("Players")
+local Player = game.players.LocalPlayer
 
 local function GetCharacter() return Player.Character end
 local function GetHRP()
@@ -409,7 +409,7 @@ local function RevertRTX()
 end
 
 shared.Client.RTX:OnChanged(function()
-	-- if shared.Client.RTX.Value then ApplyRTX() else RevertRTX() end
+	if shared.Client.RTX.Value then ApplyRTX() else RevertRTX() end
 end)
 
 -- ═══════════════════════════════════════════
