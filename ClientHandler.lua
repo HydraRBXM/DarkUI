@@ -6,7 +6,7 @@ local VirtualUser = game:GetService("VirtualUser")
 local Camera = workspace.CurrentCamera
 local Lighting = game:GetService("Lighting")
 local players = game:GetService("Players")
-local Player = game.players.LocalPlayer
+local Player = players.LocalPlayer
 
 local function GetCharacter() return Player.Character end
 local function GetHRP()
