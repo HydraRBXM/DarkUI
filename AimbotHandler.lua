@@ -240,7 +240,7 @@ local function UpdateFOVCircle()
 	if not fovCircle then return end
 
 	local showFov = shared.Aim.ShowFOV and shared.Aim.ShowFOV.Value or false
-	local aimbotActive = shared.Aim.AimbotEnabled and shared.Aim.AimbotEnabled.Value or false
+	local aimbotActive = shared.Aim.Active and shared.Aim.Active.Value or false
 
 	if not showFov or not aimbotActive then
 		fovCircle.Visible = false
@@ -250,7 +250,7 @@ local function UpdateFOVCircle()
 	local mousePos = UserInputService:GetMouseLocation()
 	local radius = (Fov / 180) * (Camera.ViewportSize.Y / 2)
 	fovCirclePos = fovCirclePos and fovCirclePos:Lerp(mousePos, 0.28) or mousePos
-	fovCircle.Position = UDim2.new(0.5, -100, 0.5, -100)
+	fovCircle.Position = UDim2.new(0, fovCirclePos.X - radius, 0, fovCirclePos.Y - radius)
 	fovCircle.Size = UDim2.new(0, radius * 2, 0, radius * 2)
 
 	local stroke = fovCircle:FindFirstChildWhichIsA("UIStroke")
@@ -320,5 +320,5 @@ task.delay(1, function()
 	UpdateSettings()
 	RunService.RenderStepped:Connect(UpdateFOVCircle)
 	RunService.Heartbeat:Connect(MainLoop)
-	print("Finished aimbot...")
+	print("Loaded aimbot...")
 end)
