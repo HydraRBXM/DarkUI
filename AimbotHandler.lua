@@ -233,13 +233,14 @@ local function ApplyMouseMove(targetWorldPos, dt)
 end
 
 local function UpdateFOVCircle()
+	print("Updating FOV circle...")
 	if not fovCircle then 
 		fovCircle = shared.Aim.fovCircle
 	end
 	if not fovCircle then return end
 
-	local showFov = Toggles.ShowFOV and Toggles.ShowFOV.Value or false
-	local aimbotActive = Toggles.AimbotEnabled and Toggles.AimbotEnabled.Value or false
+	local showFov = shared.Aim.ShowFOV and shared.Aim.ShowFOV.Value or false
+	local aimbotActive = shared.Aim.AimbotEnabled and shared.Aim.AimbotEnabled.Value or false
 
 	if not showFov or not aimbotActive then
 		fovCircle.Visible = false
