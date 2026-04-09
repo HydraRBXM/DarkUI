@@ -21,6 +21,8 @@ local function GetSeat()
 	return hum and hum.Sit and hum.SeatPart or nil
 end
 
+local CFLY_ROTATE_SPEED = 12
+
 -- ═══════════════════════════════════════════
 --  HELPERS
 -- ═══════════════════════════════════════════
