@@ -1,22 +1,64 @@
 -- Aimbot Handler - v2
-task.wait(3)
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local Player = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+
+local isAiming = false
+local currentTarget = nil
+local lockedTarget = nil
+local lockedAimPart = nil
+local cachedViewport = Vector2.zero
+local cachedCharacters = {}
+local lastCache = 0
+local settingsCounter = 0
+local fovCirclePos = nil
+local lastTime = tick()
+local fovCircle = nil
+
+-- ── Drift ────────────────────────────────────────────────────────────────────
+local driftX, driftY = 0, 0
+local driftSeedX = math.random() * 100
+local driftSeedY = math.random() * 100 + 50
+
+-- ── Settings ─────────────────────────────────────────────────────────────────
+local Active = false
+local LegitAim = false
+local TeamCheck = false
+local WallCheck = false
+local HitChance = 95
+local HeadshotChance = 68
+local BodyShotChance = 92
+local Xsmoothness = 0.55
+local Ysmoothness = 0.55
+local Prediction = 0
+local Fov = 90
+local Strength = 0.85
+local ShakeIntensity = 4
+local distance = 1000   -- max stud distance to lock onto a target
+
+local sharedAim = shared.Aim or nil
+local Toggles = getgenv().Toggles or {}
+local Options = getgenv().Options or {}
+
 local function UpdateSettings()
 	pcall(function()
-		if not Toggles or not Options then return end
+		if not sharedAim then return end
 
-		Active = (Toggles["AimbotEnabled"] and Toggles["AimbotEnabled"].Value) or false
-		LegitAim = (Toggles["AimbotLegit"] and Toggles["AimbotLegit"].Value) or false
-		TeamCheck = (Toggles["AimbotTeamCheck"] and Toggles["AimbotTeamCheck"].Value) or false
-		WallCheck = (Toggles["AimbotWallCheck"] and Toggles["AimbotWallCheck"].Value) or false
+		Active = (sharedAim["Active"] and sharedAim["Active"].Value) or false
+		LegitAim = (sharedAim["LegitAim"] and sharedAim["LegitAim"].Value) or false
+		TeamCheck = (sharedAim["TeamCheck"] and sharedAim["TeamCheck"].Value) or false
+		WallCheck = (sharedAim["WallCheck"] and sharedAim["WallCheck"].Value) or false
 
-		HitChance = math.clamp(tonumber(Options["AimbotHitChance"] and Options["AimbotHitChance"].Value) or 95, 0, 100)
-		HeadshotChance = math.clamp(tonumber(Options["AimbotHeadshotChance"] and Options["AimbotHeadshotChance"].Value) or 68, 0, 100)
-		BodyShotChance = math.clamp(tonumber(Options["AimbotBodyhitChance"] and Options["AimbotBodyhitChance"].Value) or 92, 0, 100)
-		Xsmoothness = math.clamp(tonumber(Options["AimbotXSmoothing"] and Options["AimbotXSmoothing"].Value) or 0.55, 0.01, 1)
-		Ysmoothness = math.clamp(tonumber(Options["AimbotYSmoothing"] and Options["AimbotYSmoothing"].Value) or 0.55, 0.01, 1)
-		Fov = math.clamp(tonumber(Options["AimbotFOV"] and Options["AimbotFOV"].Value) or 90, 1, 180)
-		Strength = math.clamp(tonumber(Options["AimbotLockStrength"] and Options["AimbotLockStrength"].Value) or 85, 0, 100) / 100
-		distance = math.clamp(tonumber(Options["AimbotDistance"] and Options["AimbotDistance"].Value) or 1000, 1, 10000)
+		HitChance = math.clamp(tonumber(sharedAim["HitChance"] and sharedAim["HitChance"].Value) or 95, 0, 100)
+		HeadshotChance = math.clamp(tonumber(sharedAim["HeadshotChance"] and sharedAim["HeadshotChance"].Value) or 68, 0, 100)
+		BodyShotChance = math.clamp(tonumber(sharedAim["BodyShotChance"] and sharedAim["BodyShotChance"].Value) or 92, 0, 100)
+		Xsmoothness = math.clamp(tonumber(sharedAim["Xsmoothness"] and sharedAim["Xsmoothness"].Value) or 0.55, 0.01, 1)
+		Ysmoothness = math.clamp(tonumber(sharedAim["Ysmoothness"] and sharedAim["Ysmoothness"].Value) or 0.55, 0.01, 1)
+		Fov = math.clamp(tonumber(sharedAim["Fov"] and sharedAim["Fov"].Value) or 90, 1, 180)
+		Strength = math.clamp(tonumber(sharedAim["Strength"] and sharedAim["Strength"].Value) or 85, 0, 100) / 100
+		distance = math.clamp(tonumber(sharedAim["distance"] and sharedAim["distance"].Value) or 1000, 1, 10000)
 	end)
 end
 
@@ -193,8 +235,8 @@ end
 local function UpdateFOVCircle()
 	if not fovCircle then return end
 
-	local showFov = Toggles["ShowFOV"] and Toggles["ShowFOV"].Value or false
-	local aimbotActive = Toggles["AimbotEnabled"] and Toggles["AimbotEnabled"].Value or false
+	local showFov = Toggles.ShowFOV and Toggles.ShowFOV.Value or false
+	local aimbotActive = Toggles.AimbotEnabled and Toggles.AimbotEnabled.Value or false
 
 	if not showFov or not aimbotActive then
 		fovCircle.Visible = false
@@ -217,7 +259,7 @@ local function UpdateFOVCircle()
 end
 
 local function IsAimKeyDown()
-	local keyPicker = Options["AimbotKey"]
+	local keyPicker = Options.AimbotKey
 	if keyPicker then
 		local key = keyPicker.Value
 		if key and key ~= "None" then
@@ -269,7 +311,7 @@ local function MainLoop()
 end
 
 task.delay(1, function()
-	makefov()
+	fovCircle = shared.Aim and shared.Aim.fovCircle or nil
 	UpdateSettings()
 	RunService.RenderStepped:Connect(UpdateFOVCircle)
 	RunService.Heartbeat:Connect(MainLoop)
