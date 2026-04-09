@@ -233,6 +233,9 @@ local function ApplyMouseMove(targetWorldPos, dt)
 end
 
 local function UpdateFOVCircle()
+	if not fovCircle then 
+		fovCircle = shared.Aim.fovCircle
+	end
 	if not fovCircle then return end
 
 	local showFov = Toggles.ShowFOV and Toggles.ShowFOV.Value or false
@@ -246,7 +249,7 @@ local function UpdateFOVCircle()
 	local mousePos = UserInputService:GetMouseLocation()
 	local radius = (Fov / 180) * (Camera.ViewportSize.Y / 2)
 	fovCirclePos = fovCirclePos and fovCirclePos:Lerp(mousePos, 0.28) or mousePos
-	fovCircle.Position = UDim2.new(0, fovCirclePos.X, 0, fovCirclePos.Y)
+	fovCircle.Position = UDim2.new(0, fovCirclePos.X - radius, 0, fovCirclePos.Y - radius)
 	fovCircle.Size = UDim2.new(0, radius * 2, 0, radius * 2)
 
 	local stroke = fovCircle:FindFirstChildWhichIsA("UIStroke")
@@ -311,7 +314,7 @@ local function MainLoop()
 end
 
 task.delay(1, function()
-	fovCircle = shared.Aim and shared.Aim.fovCircle or nil
+	fovCircle = shared.Aim.fovCircle
 	UpdateSettings()
 	RunService.RenderStepped:Connect(UpdateFOVCircle)
 	RunService.Heartbeat:Connect(MainLoop)
