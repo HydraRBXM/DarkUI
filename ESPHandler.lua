@@ -1,4 +1,3 @@
-task.wait(3)
 local EspPlayers = game:GetService("Players")
 local EspRunService = game:GetService("RunService")
 local EspCamera = workspace.CurrentCamera
@@ -26,6 +25,8 @@ local function GetPulseSpeed()
 	return 1.5
 end
 
+local sharedEsp = shared.Esp or nil
+
 -- ═══════════════════════════════════════════
 --  FONT MAP
 -- ═══════════════════════════════════════════
@@ -38,11 +39,11 @@ local FontMap = {
 }
 
 local function GetEspFont()
-	return FontMap[Options.EspFont.Value] or Enum.Font.GothamBold
+	return FontMap[sharedEsp.EspFont.Value] or Enum.Font.GothamBold
 end
 
 local function GetNameStr(player)
-	local t = Options.EspNameType.Value
+	local t = sharedEsp.EspNameType.Value
 	if t == 'Display Name' then return player.DisplayName
 	elseif t == 'Username' then return player.Name
 	else return player.Name end
@@ -52,7 +53,7 @@ end
 --  COLORING
 -- ═══════════════════════════════════════════
 local function GetEspColor(baseColor)
-	local mode = Options['ESP Coloring'].Value
+	local mode = sharedEsp['ESP Coloring'].Value
 	if mode == 'Rainbow' then
 		return Color3.fromHSV(EspRainbowHue, 1, 1)
 	elseif mode == 'Gradient' then
@@ -61,10 +62,10 @@ local function GetEspColor(baseColor)
 		local speed = GetPulseSpeed()
 		local t = (EspPulseTimer % speed) / speed
 		local alpha = math.abs(math.sin(t * math.pi))
-		local pc = Options.EspPulseColor.Value
+		local pc = sharedEsp.EspPulseColor.Value
 		return pc:Lerp(Color3.new(1, 1, 1), alpha)
 	elseif mode == 'Custom Color' then
-		return Options.EspCustomColor.Value
+		return sharedEsp.EspCustomColor.Value
 	elseif mode == 'Team Color' then
 		local team = EspLocalPlayer.Team
 		return team and team.TeamColor.Color or baseColor
@@ -87,7 +88,7 @@ local function EspIsAlive(char)
 end
 
 local function EspIsTeammate(player)
-	if Toggles.EspIncludeTeammates.Value then return false end
+	if sharedEsp.EspIncludeTeammates.Value then return false end
 	return player.Team ~= nil and player.Team == EspLocalPlayer.Team
 end
 
@@ -106,7 +107,7 @@ local function GetBoundsFixed(char)
 	if (topSP.X < -50 or topSP.X > vp.X + 50) and (botSP.X < -50 or botSP.X > vp.X + 50) then return nil end
 	local h = botSP.Y - topSP.Y
 	if h <= 2 then return nil end
-	local scaler = Options.EspFixedWidthScaler.Value / 100
+	local scaler = sharedEsp.EspFixedWidthScaler.Value / 100
 	local w = h * 0.6 * scaler
 	return topSP.X - w * 0.5, topSP.Y, w, h
 end
@@ -173,7 +174,7 @@ local function GetBoundsAutomatic(char)
 end
 
 local function GetBounds(char)
-	local mode = Options.EspBoundingMode.Value
+	local mode = sharedEsp.EspBoundingMode.Value
 	if mode == 'Fixed' then return GetBoundsFixed(char)
 	elseif mode == 'Accurate' then return GetBoundsAccurate(char)
 	else return GetBoundsAutomatic(char) end
@@ -394,7 +395,7 @@ end
 local function UpdateEsp(player)
 	local obj = EspObjects[player]
 	if not obj then return end
-	if not Toggles.ESPEnabled.Value then HideEsp(obj); return end
+	if not sharedEsp.EspEnabled.Value then HideEsp(obj); return end
 	local char = player.Character
 	if not char or not EspIsAlive(char) then HideEsp(obj); return end
 	if EspIsTeammate(player) then HideEsp(obj); return end
@@ -406,11 +407,11 @@ local function UpdateEsp(player)
 	local onScreen = x ~= nil
 	local tk = 1.5
 	local font = GetEspFont()
-	local espColor = GetEspColor(Options.BoxESPColor.Value)
+	local espColor = GetEspColor(sharedEsp.BoxESPColor.Value)
 
 	-- ── BOX ──────────────────────────────────
-	if Toggles.BoxESP.Value and onScreen then
-		local boxMode = Options.BoxESPMode.Value
+	if sharedEsp.BoxESP.Value and onScreen then
+		local boxMode = sharedEsp.BoxESPMode.Value
 		if boxMode == 'Corner' then
 			obj.boxFrame.Visible = false
 			obj.circleFrame.Visible = false
@@ -442,46 +443,46 @@ local function UpdateEsp(player)
 	end
 
 	-- ── FILL ─────────────────────────────────
-	if Toggles.FillESP.Value and onScreen then
-		local fc = GetEspColor(Options.FillESPColor.Value)
+	if sharedEsp.FillESP.Value and onScreen then
+		local fc = GetEspColor(sharedEsp.FillESPColor.Value)
 		obj.fill.Position = UDim2.new(0, x, 0, y)
 		obj.fill.Size = UDim2.new(0, w, 0, h)
 		obj.fill.BackgroundColor3 = fc
-		obj.fill.BackgroundTransparency = math.clamp(Options.FillESPTransparency.Value / 100, 0, 1)
+		obj.fill.BackgroundTransparency = math.clamp(sharedEsp.FillESPTransparency.Value / 100, 0, 1)
 		obj.fill.Visible = true
 	else
 		obj.fill.Visible = false
 	end
 
 	-- ── HEALTHBAR ────────────────────────────
-	if Toggles.HealthBarESP.Value and onScreen then
+	if sharedEsp.HealthBarESP.Value and onScreen then
 		local pct = GetHealthPct(char)
-		local hbW = Options.HealthBarThickness.Value
-		local size = Options.HealthBarSize.Value / 100
-		local offX = Options.HealthBarXOffset.Value
-		local offY = Options.HealthBarYOffset.Value
+		local hbW = sharedEsp.HealthBarThickness.Value
+		local size = sharedEsp.HealthBarSize.Value / 100
+		local offX = sharedEsp.HealthBarXOffset.Value
+		local offY = sharedEsp.HealthBarYOffset.Value
 		local hbH = h * size
 		local hbX = x - hbW - 3 + offX
 		local hbY = y + offY
-		obj.hbBg.BackgroundColor3 = Options.HealthBarBackgroundColor.Value
-		obj.hbBg.BackgroundTransparency = math.clamp(Options.HealthBarBackgroundTransparency.Value / 100, 0, 1)
+		obj.hbBg.BackgroundColor3 = sharedEsp.HealthBarBackgroundColor.Value
+		obj.hbBg.BackgroundTransparency = math.clamp(sharedEsp.HealthBarBackgroundTransparency.Value / 100, 0, 1)
 		obj.hbBg.Position = UDim2.new(0, hbX, 0, hbY)
 		obj.hbBg.Size = UDim2.new(0, hbW, 0, hbH)
 		obj.hbBg.Visible = true
 		obj.hbFill.AnchorPoint = Vector2.new(0, 1)
 		obj.hbFill.Position = UDim2.new(0, 0, 1, 0)
 		obj.hbFill.Size = UDim2.new(1, 0, pct, 0)
-		obj.hbFill.BackgroundColor3 = Options.HealthBarColor.Value
-		obj.hbFill.BackgroundTransparency = math.clamp(Options.HealthBarTransparency.Value / 100, 0, 1)
+		obj.hbFill.BackgroundColor3 = sharedEsp.HealthBarColor.Value
+		obj.hbFill.BackgroundTransparency = math.clamp(sharedEsp.HealthBarTransparency.Value / 100, 0, 1)
 	else
 		obj.hbBg.Visible = false
 	end
 
 	-- ── SKELETON ─────────────────────────────
-	if Toggles.SkeletonESP.Value then
-		local sc = GetEspColor(Options.SkeletonESPColor.Value)
-		local thickness = Options.SkeletonESPThickness.Value
-		local transparency = math.clamp(Options.SkeletonESPTransparency.Value / 100, 0, 1)
+	if sharedEsp.SkeletonESP.Value then
+		local sc = GetEspColor(sharedEsp.SkeletonESPColor.Value)
+		local thickness = sharedEsp.SkeletonESPThickness.Value
+		local transparency = math.clamp(sharedEsp.SkeletonESPTransparency.Value / 100, 0, 1)
 		local isR6 = char:FindFirstChild("Torso") ~= nil
 		local bones = isR6 and BONES_R6 or BONES_R15
 		for i, f in ipairs(obj.skeleton) do
@@ -503,14 +504,14 @@ local function UpdateEsp(player)
 	end
 
 	-- ── NAME ─────────────────────────────────
-	if Toggles.NameESP.Value and onScreen then
-		local nc = GetEspColor(Options.NameTextColor.Value)
-		local offX = Options.NameXOffset.Value
-		local offY = Options.NameYOffset.Value
+	if sharedEsp.NameESP.Value and onScreen then
+		local nc = GetEspColor(sharedEsp.NameTextColor.Value)
+		local offX = sharedEsp.NameXOffset.Value
+		local offY = sharedEsp.NameYOffset.Value
 		obj.nameLabel.Text = GetNameStr(player)
 		obj.nameLabel.TextColor3 = nc
 		obj.nameLabel.Font = font
-		obj.nameLabel.ts.Thickness = Options.NameStrokeThickness.Value
+		obj.nameLabel.ts.Thickness = sharedEsp.NameStrokeThickness.Value
 		obj.nameLabel.ts.Color = Color3.new(0, 0, 0)
 		obj.nameLabel.TextSize = 13
 		obj.nameLabel.Position = UDim2.new(0, x + w * 0.5 + offX, 0, y - 2 + offY)
@@ -520,9 +521,9 @@ local function UpdateEsp(player)
 	end
 
 	-- ── DISTANCE ─────────────────────────────
-	local showDist = (Toggles.DistanceESP and Toggles.DistanceESP.Value) or false
+	local showDist = (sharedEsp.DistanceESP and sharedEsp.DistanceESP.Value) or false
 	if showDist and onScreen then
-		local offX = Options.NameXOffset.Value
+		local offX = sharedEsp.NameXOffset.Value
 		obj.distLabel.Text = GetDist(char) .. "m"
 		obj.distLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
 		obj.distLabel.Font = font
@@ -536,12 +537,12 @@ local function UpdateEsp(player)
 	end
 
 	-- ── HIGHLIGHT ────────────────────────────
-	if Toggles.HighlightEnabled.Value then
-		local fillColor = GetHighlightColor(Options.HighlightFillColor.Value)
-		local outlineColor = GetHighlightColor(Options.HighlightOutlineColor.Value)
-		local fillT = math.clamp(Options.HighlightFillTransparency.Value, 0, 1)
-		local outT = math.clamp(Options.HighlightOutlineTransparency.Value, 0, 1)
-		local extra = Options.HighlightExtra.Value
+	if sharedEsp.HighlightEnabled.Value then
+		local fillColor = GetHighlightColor(sharedEsp.HighlightFillColor.Value)
+		local outlineColor = GetHighlightColor(sharedEsp.HighlightOutlineColor.Value)
+		local fillT = math.clamp(sharedEsp.HighlightFillTransparency.Value, 0, 1)
+		local outT = math.clamp(sharedEsp.HighlightOutlineTransparency.Value, 0, 1)
+		local extra = sharedEsp.HighlightExtra.Value
 		if extra == 'Flicker' then
 			local visible = math.random() > 0.4
 			fillT = visible and fillT or 1
@@ -558,7 +559,7 @@ local function UpdateEsp(player)
 		obj.highlight.OutlineColor = outlineColor
 		obj.highlight.FillTransparency = math.clamp(fillT, 0, 1)
 		obj.highlight.OutlineTransparency = math.clamp(outT, 0, 1)
-		obj.highlight.DepthMode = Toggles.HighlightThroughWalls.Value
+		obj.highlight.DepthMode = sharedEsp.HighlightThroughWalls.Value
 			and Enum.HighlightDepthMode.AlwaysOnTop
 			or Enum.HighlightDepthMode.Occluded
 		obj.highlight.Enabled = true
