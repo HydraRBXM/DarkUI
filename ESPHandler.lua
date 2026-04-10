@@ -223,6 +223,7 @@ end
 local function MakeLabel(parent, zindex)
 	local l = Instance.new("TextLabel")
     local ts = Instance.new("UIStroke", l)
+	ts.Name = "ts"
     ts.Thickness = 1
     ts.Color = Color3.new(0, 0, 0)
     l.BorderSizePixel = 0
