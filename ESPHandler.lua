@@ -538,38 +538,32 @@ local function UpdateEsp(player)
 	end
 
 	-- ── HIGHLIGHT ────────────────────────────
-	if sharedEsp.HighlightEnabled.Value then
-		local fillColor = GetHighlightColor(sharedEsp.HighlightFillColor.Value)
-		local outlineColor = GetHighlightColor(sharedEsp.HighlightOutlineColor.Value)
-		local fillT = math.clamp(sharedEsp.HighlightFillTransparency.Value, 0, 1)
-		local outT = math.clamp(sharedEsp.HighlightOutlineTransparency.Value, 0, 1)
-		local extra = sharedEsp.HighlightExtra.Value
-		if extra == 'Flicker' then
-			local visible = math.random() > 0.4
-			fillT = visible and fillT or 1
-		elseif extra == 'Breathe' then
-			local speed = GetPulseSpeed()
-			local t = (EspPulseTimer % speed) / speed
-			local alpha = math.abs(math.sin(t * math.pi))
-			fillT = fillT + (1 - fillT) * alpha
-		end
-		if obj.highlight.Parent ~= char then
-			obj.highlight.Parent = char
-		end
-		obj.highlight.FillColor = fillColor
-		obj.highlight.OutlineColor = outlineColor
-		obj.highlight.FillTransparency = math.clamp(fillT, 0, 1)
-		obj.highlight.OutlineTransparency = math.clamp(outT, 0, 1)
-		obj.highlight.DepthMode = sharedEsp.HighlightThroughWalls.Value
-			and Enum.HighlightDepthMode.AlwaysOnTop
-			or Enum.HighlightDepthMode.Occluded
-		obj.highlight.Enabled = true
-	else
-		obj.highlight.Enabled = false
-		if obj.highlight.Parent ~= workspace then
-			obj.highlight.Parent = workspace
-		end
+if sharedEsp.HighlightEnabled.Value then
+	local fillColor = GetHighlightColor(sharedEsp.HighlightFillColor.Value)
+	local outlineColor = GetHighlightColor(sharedEsp.HighlightOutlineColor.Value)
+	local fillT = math.clamp(sharedEsp.HighlightFillTransparency.Value, 0, 1)
+	local outT = math.clamp(sharedEsp.HighlightOutlineTransparency.Value, 0, 1)
+	local extra = sharedEsp.HighlightExtra.Value
+	if extra == 'Flicker' then
+		local visible = math.random() > 0.4
+		fillT = visible and fillT or 1
+	elseif extra == 'Breathe' then
+		local speed = GetPulseSpeed()
+		local t = (EspPulseTimer % speed) / speed
+		local alpha = math.abs(math.sin(t * math.pi))
+		fillT = fillT + (1 - fillT) * alpha
 	end
+	obj.highlight.FillColor = fillColor
+	obj.highlight.OutlineColor = outlineColor
+	obj.highlight.FillTransparency = math.clamp(fillT, 0, 1)
+	obj.highlight.OutlineTransparency = math.clamp(outT, 0, 1)
+	obj.highlight.DepthMode = sharedEsp.HighlightThroughWalls.Value
+		and Enum.HighlightDepthMode.AlwaysOnTop
+		or Enum.HighlightDepthMode.Occluded
+	obj.highlight.Enabled = true
+else
+	obj.highlight.Enabled = false
+end
 end
 
 -- ═══════════════════════════════════════════
