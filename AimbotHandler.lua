@@ -1,4 +1,4 @@
--- Aimbot Handler - v2
+-- Advanced Aimbot Handler - v3
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
@@ -36,7 +36,11 @@ local Prediction = 0
 local Fov = 90
 local Strength = 0.85
 local ShakeIntensity = 4
-local distance = 1000   -- max stud distance to lock onto a target
+local distance = 1000
+local SmarterPredictions = false
+
+-- ── Advanced Prediction Cache ────────────────────────────────────────────────
+local PredictionCache = {}
 
 local sharedAim = shared.Aim or nil
 local Toggles = getgenv().Toggles or {}
@@ -50,6 +54,7 @@ local function UpdateSettings()
 		LegitAim = (sharedAim["LegitAim"] and sharedAim["LegitAim"].Value) or false
 		TeamCheck = (sharedAim["TeamCheck"] and sharedAim["TeamCheck"].Value) or false
 		WallCheck = (sharedAim["WallCheck"] and sharedAim["WallCheck"].Value) or false
+		SmarterPredictions = (sharedAim["SmarterPredictions"] and sharedAim["SmarterPredictions"].Value) or false
 
 		HitChance = math.clamp(tonumber(sharedAim["HitChance"] and sharedAim["HitChance"].Value) or 95, 0, 100)
 		HeadshotChance = math.clamp(tonumber(sharedAim["HeadshotChance"] and sharedAim["HeadshotChance"].Value) or 68, 0, 100)
@@ -95,15 +100,47 @@ local function IsInRange(part)
 	return studs <= distance
 end
 
+-- ── SMARTER PREDICTION (Advanced) ────────────────────────────────────────────
+local function GetVelocityData(part)
+	if not part then return Vector3.zero, 0 end
+	local vel = part.AssemblyLinearVelocity or part.Velocity or Vector3.zero
+	return vel, vel.Magnitude
+end
+
 local function PredictPos(part)
 	if not part then return Vector3.zero end
-	if Prediction <= 0 then return part.Position end
-	local vel = part.AssemblyLinearVelocity or part.Velocity or Vector3.zero
-	if vel.Magnitude < 0.5 then return part.Position end
+	if Prediction <= 0 and not SmarterPredictions then return part.Position end
+	
+	local vel, speed = GetVelocityData(part)
 	local dist = (part.Position - Camera.CFrame.Position).Magnitude
-	local travelTime = Prediction * (dist / 65) * (vel.Magnitude / 16)
-	travelTime = math.clamp(travelTime, 0, 0.22)
-	return part.Position + vel * travelTime
+	
+	if SmarterPredictions then
+		-- Advanced prediction with acceleration detection
+		local cacheKey = part:GetFullName()
+		local cache = PredictionCache[cacheKey] or {lastPos = part.Position, lastVel = Vector3.zero, lastTime = tick()}
+		PredictionCache[cacheKey] = cache
+		
+		local dt = tick() - cache.lastTime
+		if dt > 0.001 then
+			local acceleration = (vel - cache.lastVel) / dt
+			cache.lastVel = vel
+			cache.lastTime = tick()
+			
+			-- Predict with acceleration
+			local travelTime = math.clamp((dist / 65) * 0.15, 0, 0.3)
+			local predictedPos = part.Position + vel * travelTime + acceleration * (travelTime * travelTime * 0.5)
+			
+			cache.lastPos = predictedPos
+			return predictedPos
+		end
+		return cache.lastPos
+	else
+		-- Standard prediction
+		if speed < 0.5 then return part.Position end
+		local travelTime = Prediction * (dist / 65) * (speed / 16)
+		travelTime = math.clamp(travelTime, 0, 0.22)
+		return part.Position + vel * travelTime
+	end
 end
 
 local function InFov(worldPos)
@@ -234,12 +271,12 @@ end
 
 local function UpdateFOVCircle()
 	if not fovCircle then 
-		fovCircle = shared.Aim.fovCircle
+		fovCircle = shared.Aim and shared.Aim.fovCircle or nil
 	end
 	if not fovCircle then return end
 
-	local showFov = shared.Aim.ShowFOV and shared.Aim.ShowFOV.Value or false
-	local aimbotActive = shared.Aim.Active and shared.Aim.Active.Value or false
+	local showFov = Toggles.ShowFOV and Toggles.ShowFOV.Value or false
+	local aimbotActive = Toggles.AimbotEnabled and Toggles.AimbotEnabled.Value or false
 
 	if not showFov or not aimbotActive then
 		fovCircle.Visible = false
@@ -314,10 +351,8 @@ local function MainLoop()
 end
 
 task.delay(1, function()
-	print("Updating aimbot...")
-	fovCircle = shared.Aim.fovCircle
+	fovCircle = shared.Aim and shared.Aim.fovCircle or nil
 	UpdateSettings()
 	RunService.RenderStepped:Connect(UpdateFOVCircle)
 	RunService.Heartbeat:Connect(MainLoop)
-	print("Loaded aimbot...")
 end)
