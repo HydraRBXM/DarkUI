@@ -1,5 +1,5 @@
--- Aimbot Handler - Unnamed Enhancements Style
-print("its us")
+-- Aimbot Handler - v2 (Smarter Prediction Upgrade Integrated)
+print("i fucked her")
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
@@ -18,11 +18,12 @@ local fovCirclePos = nil
 local lastTime = tick()
 local fovCircle = nil
 
--- ── Smooth Tracking State ────────────────────────────────────────────────────
-local smoothedScreenPos = Vector2.new(0, 0)
-local isLocked = false
+-- ── Drift ─────────────────────────────────────────────────
+local driftX, driftY = 0, 0
+local driftSeedX = math.random() * 100
+local driftSeedY = math.random() * 100 + 50
 
--- ── Settings ─────────────────────────────────────────────────────────────────
+-- ── Settings ──────────────────────────────────────────────
 local Active = false
 local LegitAim = false
 local TeamCheck = false
@@ -36,11 +37,30 @@ local Ysmoothness = 0.55
 local Prediction = 0
 local Fov = 90
 local Strength = 0.85
+local ShakeIntensity = 0
 local distance = 1000
 
 local sharedAim = shared.Aim or nil
 local Toggles = getgenv().Toggles or {}
 local Options = getgenv().Options or {}
+
+-- 🔥 SMART PRED STORAGE
+local lastVelocities = {}
+local lastPositions = {}
+
+local function GetVelocity(part, dt)
+	local lastPos = lastPositions[part]
+	local currentPos = part.Position
+
+	if not lastPos then
+		lastPositions[part] = currentPos
+		return part.AssemblyLinearVelocity or Vector3.zero
+	end
+
+	local velocity = (currentPos - lastPos) / math.max(dt, 0.016)
+	lastPositions[part] = currentPos
+	return velocity
+end
 
 local function UpdateSettings()
 	pcall(function()
@@ -96,15 +116,38 @@ local function IsInRange(part)
 	return studs <= distance
 end
 
-local function PredictPos(part)
+-- 🔥 UPGRADED PREDICTPOS
+local function PredictPos(part, dt)
 	if not part then return Vector3.zero end
-	if Prediction <= 0 then return part.Position end
-	local vel = part.AssemblyLinearVelocity or part.Velocity or Vector3.zero
-	if vel.Magnitude < 0.5 then return part.Position end
-	local dist = (part.Position - Camera.CFrame.Position).Magnitude
-	local travelTime = Prediction * (dist / 65) * (vel.Magnitude / 16)
-	travelTime = math.clamp(travelTime, 0, 0.22)
-	return part.Position + vel * travelTime
+
+	local pos = part.Position
+	local vel = part.AssemblyLinearVelocity or Vector3.zero
+
+	if not SmarterPredictions then
+		if Prediction <= 0 then return pos end
+		return pos + vel * (Prediction * 0.01)
+	end
+
+	-- better velocity
+	local realVel = GetVelocity(part, dt)
+
+	-- acceleration
+	local lastVel = lastVelocities[part] or realVel
+	local accel = (realVel - lastVel)
+	lastVelocities[part] = realVel
+
+	local dist = (pos - Camera.CFrame.Position).Magnitude
+
+	-- dynamic travel time
+	local travelTime = (dist / 300) + (Prediction * 0.01)
+	travelTime = math.clamp(travelTime, 0.01, 0.35)
+
+	-- prevent overpredict
+	if realVel.Magnitude < 2 then
+		return pos
+	end
+
+	return pos + realVel * travelTime + accel * (travelTime ^ 2) * 0.5
 end
 
 local function InFov(worldPos)
@@ -121,40 +164,34 @@ local function ChooseAimPart(char)
 	local torso = char:FindFirstChild("UpperTorso")
 		or char:FindFirstChild("Torso")
 		or char:FindFirstChild("HumanoidRootPart")
-	if not head then return char:FindFirstChild("HumanoidRootPart") or torso end
+
+	if not head then return torso end
+
 	local r = math.random(100)
 	if r <= HeadshotChance then return head end
 	if r <= HeadshotChance + BodyShotChance then return torso end
-	return char:FindFirstChild("HumanoidRootPart") or torso
+	return torso
 end
 
-local function FindTarget()
+local function FindTarget(dt)
 	RefreshCache()
 
-	-- STICKY AIM: Keep locked target if still valid
 	if lockedTarget and lockedTarget.Parent then
 		local hum = lockedTarget:FindFirstChildWhichIsA("Humanoid")
 		if hum and hum.Health > 0 then
 			local part = (lockedAimPart and lockedAimPart.Parent == lockedTarget)
-				and lockedAimPart
-				or ChooseAimPart(lockedTarget)
-			if part then
-				if not IsInRange(part) then
-					lockedTarget = nil
-					lockedAimPart = nil
-				else
-					local pred = PredictPos(part)
-					local ok, scr = InFov(pred)
-					if ok and IsVisible(part) then
-						isLocked = true
-						return part, scr
-					end
+				and lockedAimPart or ChooseAimPart(lockedTarget)
+
+			if part and IsInRange(part) then
+				local pred = PredictPos(part, dt)
+				local ok, scr = InFov(pred)
+				if ok and IsVisible(part) then
+					return part, scr
 				end
 			end
 		end
 	end
 
-	isLocked = false
 	lockedTarget = nil
 	lockedAimPart = nil
 
@@ -166,14 +203,12 @@ local function FindTarget()
 		if TeamCheck and plr and plr.Team == Player.Team then continue end
 
 		local root = char:FindFirstChild("HumanoidRootPart")
-		if not root then continue end
-
-		if not IsInRange(root) then continue end
-		if not IsVisible(root) then continue end
+		if not root or not IsInRange(root) or not IsVisible(root) then continue end
 
 		local part = ChooseAimPart(char)
-		local pred = PredictPos(part)
+		local pred = PredictPos(part, dt)
 		local ok, scr = InFov(pred)
+
 		if ok and scr then
 			local d = (scr - screenCenter).Magnitude
 			if d < minDist then
@@ -187,62 +222,44 @@ local function FindTarget()
 	if closest then
 		lockedTarget = closest.Parent
 		lockedAimPart = closest
-		isLocked = true
 	end
 
 	return closest, bestScr
 end
 
--- ── STICKY SMOOTH LOCK (Zero Shake) ──────────────────────────────────────────
-local function ApplyStickySmoothing(targetWorldPos, dt)
+local function UpdateDrift(dt)
+	if not isAiming or not currentTarget then
+		driftX, driftY = 0, 0
+		return
+	end
+
+	driftSeedX += dt * 1.8
+	driftSeedY += dt * 2.3
+
+	local amp = 0.013
+	driftX = math.sin(driftSeedX * 3.4) * amp
+	driftY = math.cos(driftSeedY * 2.7) * amp
+end
+
+local function ApplyMouseMove(targetWorldPos, dt)
 	if not targetWorldPos then return end
+
 	local vp = Camera:WorldToViewportPoint(targetWorldPos)
 	if vp.Z <= 0 then return end
 
-	local targetScreenPos = Vector2.new(vp.X, vp.Y)
 	local mouse = UserInputService:GetMouseLocation()
-	local currentMousePos = Vector2.new(mouse.X, mouse.Y)
 
-	-- STICKY: Smoothly move toward target with zero jitter
-	if not isLocked then
-		smoothedScreenPos = targetScreenPos
-	end
+	local dx = (vp.X + driftX) - mouse.X
+	local dy = (vp.Y + driftY) - mouse.Y
 
-	-- Ultra smooth lerp (this is the key to zero shake)
-	local lerpAmount = 0.06 + (Strength * 0.04)
-	lerpAmount = math.clamp(lerpAmount, 0.04, 0.12)
-	smoothedScreenPos = smoothedScreenPos:Lerp(targetScreenPos, lerpAmount)
-
-	local dx = smoothedScreenPos.X - currentMousePos.X
-	local dy = smoothedScreenPos.Y - currentMousePos.Y
-	local dist = math.sqrt(dx*dx + dy*dy)
-
-	-- Completely ignore sub-pixel movements (zero jitter)
-	if dist < 1.2 then return end
 	if math.random(100) > HitChance then return end
 
-	-- Apply smoothness with very conservative values
-	local frameScale = math.clamp(dt * 60, 0.25, 1.0)
-	
-	-- Lower smoothness values = smoother, less "snappy"
-	local rateX = math.clamp(1 - Xsmoothness, 0.12, 0.48)
-	local rateY = math.clamp(1 - Ysmoothness, 0.12, 0.48)
-	
-	local alphaX = 1 - (1 - rateX) ^ frameScale
-	local alphaY = 1 - (1 - rateY) ^ frameScale
+	local smoothX = (1 - Xsmoothness) * Strength
+	local smoothY = (1 - Ysmoothness) * Strength
 
-	-- VERY conservative step sizes (no overshoot = no shake)
-	local maxStep = LegitAim and 14 or 26
-	local stepX = math.clamp(dx * alphaX, -maxStep, maxStep)
-	local stepY = math.clamp(dy * alphaY, -maxStep, maxStep)
-
-	-- Final dampening for ultra smooth motion
-	local mx = math.round(stepX * 0.95)
-	local my = math.round(stepY * 0.95)
-
-	if mx ~= 0 or my ~= 0 then
-		pcall(function() mousemoverel(mx, my) end)
-	end
+	pcall(function()
+		mousemoverel(dx * smoothX, dy * smoothY)
+	end)
 end
 
 local function UpdateFOVCircle()
@@ -261,72 +278,48 @@ local function UpdateFOVCircle()
 
 	local mousePos = UserInputService:GetMouseLocation()
 	local radius = (Fov / 180) * (Camera.ViewportSize.Y / 2)
-	fovCirclePos = fovCirclePos and fovCirclePos:Lerp(mousePos, 0.08) or mousePos
+
+	fovCirclePos = fovCirclePos and fovCirclePos:Lerp(mousePos, 0.28) or mousePos
+
 	fovCircle.Position = UDim2.new(0, fovCirclePos.X - radius, 0, fovCirclePos.Y - radius)
 	fovCircle.Size = UDim2.new(0, radius * 2, 0, radius * 2)
-
-	local stroke = fovCircle:FindFirstChildWhichIsA("UIStroke")
-	if stroke then
-		stroke.Color = isAiming and Color3.fromRGB(0, 255, 100) or Color3.fromRGB(220, 220, 255)
-		stroke.Transparency = isAiming and 0.25 or 0.55
-	end
 
 	fovCircle.Visible = true
 end
 
 local function IsAimKeyDown()
-	local keyPicker = Options.AimbotKey
-	if keyPicker then
-		local key = keyPicker.Value
-		if key and key ~= "None" then
-			local mouseMap = {
-				MB1 = Enum.UserInputType.MouseButton1,
-				MB2 = Enum.UserInputType.MouseButton2,
-				MB3 = Enum.UserInputType.MouseButton3,
-			}
-			if mouseMap[key] then
-				return UserInputService:IsMouseButtonPressed(mouseMap[key])
-			end
-			local ut = Enum.UserInputType[key]
-			if ut then return UserInputService:IsMouseButtonPressed(ut) end
-			local kc = Enum.KeyCode[key]
-			if kc then return UserInputService:IsKeyDown(kc) end
-		end
-	end
 	return UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)
 end
 
 local function MainLoop()
 	cachedViewport = Camera.ViewportSize
-	settingsCounter = (settingsCounter + 1) % 4
-	if settingsCounter == 0 then UpdateSettings() end
 
 	local now = tick()
 	local dt = math.clamp(now - lastTime, 0.001, 0.06)
 	lastTime = now
 
+	UpdateSettings()
 	isAiming = Active and IsAimKeyDown()
 
 	if not isAiming then
 		currentTarget = nil
-		lockedTarget = nil
-		lockedAimPart = nil
-		isLocked = false
 		return
 	end
 
-	local part, screenPos = FindTarget()
+	UpdateDrift(dt)
+
+	local part = FindTarget(dt)
 	currentTarget = part
 
-	if part and screenPos then
-		ApplyStickySmoothing(PredictPos(part), dt)
+	if part then
+		ApplyMouseMove(PredictPos(part, dt), dt)
 	end
 end
 
 task.delay(1, function()
+	print("Updating aimbot...")
 	fovCircle = shared.Aim.fovCircle
-	UpdateSettings()
-	smoothedScreenPos = UserInputService:GetMouseLocation()
 	RunService.RenderStepped:Connect(UpdateFOVCircle)
 	RunService.Heartbeat:Connect(MainLoop)
+	print("Loaded aimbot...")
 end)
