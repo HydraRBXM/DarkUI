@@ -15,11 +15,20 @@ EspGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 EspGui.Parent = caninjectinto_COREGUI and game.CoreGui or EspLocalPlayer.PlayerGui
 
 -- ═══════════════════════════════════════════
+--  HIGHLIGHT FOLDER (unique GUID)
+-- ═══════════════════════════════════════════
+local HighlightFolder = Instance.new("Folder")
+HighlightFolder.Name = game:GetService("HttpService"):GenerateGUID(true)
+HighlightFolder.Parent = workspace
+
+-- ═══════════════════════════════════════════
 --  STATE
 -- ═══════════════════════════════════════════
 local EspObjects = {}
 local EspRainbowHue = 0
 local EspPulseTimer = 0
+local LastUpdateTime = 0
+local UpdateInterval = 0.016
 
 local function GetPulseSpeed()
 	return 1.5
@@ -304,7 +313,7 @@ local function CreateEsp(player)
 	hl.FillTransparency = 1
 	hl.OutlineTransparency = 0
 	hl.Enabled = false
-	hl.Parent = workspace
+	hl.Parent = HighlightFolder
 	EspObjects[player] = {
 		boxFrame = boxFrame,
 		boxStroke = boxStroke,
@@ -537,33 +546,36 @@ local function UpdateEsp(player)
 		obj.distLabel.Visible = false
 	end
 
-	-- ── HIGHLIGHT ────────────────────────────
-if sharedEsp.HighlightEnabled.Value then
-	local fillColor = GetHighlightColor(sharedEsp.HighlightFillColor.Value)
-	local outlineColor = GetHighlightColor(sharedEsp.HighlightOutlineColor.Value)
-	local fillT = math.clamp(sharedEsp.HighlightFillTransparency.Value, 0, 1)
-	local outT = math.clamp(sharedEsp.HighlightOutlineTransparency.Value, 0, 1)
-	local extra = sharedEsp.HighlightExtra.Value
-	if extra == 'Flicker' then
-		local visible = math.random() > 0.4
-		fillT = visible and fillT or 1
-	elseif extra == 'Breathe' then
-		local speed = GetPulseSpeed()
-		local t = (EspPulseTimer % speed) / speed
-		local alpha = math.abs(math.sin(t * math.pi))
-		fillT = fillT + (1 - fillT) * alpha
+	-- ── HIGHLIGHT (ONLY WITH HRP) ──────────
+	if sharedEsp.HighlightEnabled.Value and hrp then
+		local fillColor = GetHighlightColor(sharedEsp.HighlightFillColor.Value)
+		local outlineColor = GetHighlightColor(sharedEsp.HighlightOutlineColor.Value)
+		local fillT = math.clamp(sharedEsp.HighlightFillTransparency.Value, 0, 1)
+		local outT = math.clamp(sharedEsp.HighlightOutlineTransparency.Value, 0, 1)
+		local extra = sharedEsp.HighlightExtra.Value
+		if extra == 'Flicker' then
+			local visible = math.random() > 0.4
+			fillT = visible and fillT or 1
+		elseif extra == 'Breathe' then
+			local speed = GetPulseSpeed()
+			local t = (EspPulseTimer % speed) / speed
+			local alpha = math.abs(math.sin(t * math.pi))
+			fillT = fillT + (1 - fillT) * alpha
+		end
+		if not obj.highlight:FindFirstChild("Adornee") then
+			obj.highlight.Adornee = char
+		end
+		obj.highlight.FillColor = fillColor
+		obj.highlight.OutlineColor = outlineColor
+		obj.highlight.FillTransparency = math.clamp(fillT, 0, 1)
+		obj.highlight.OutlineTransparency = math.clamp(outT, 0, 1)
+		obj.highlight.DepthMode = sharedEsp.HighlightThroughWalls.Value
+			and Enum.HighlightDepthMode.AlwaysOnTop
+			or Enum.HighlightDepthMode.Occluded
+		obj.highlight.Enabled = true
+	else
+		obj.highlight.Enabled = false
 	end
-	obj.highlight.FillColor = fillColor
-	obj.highlight.OutlineColor = outlineColor
-	obj.highlight.FillTransparency = math.clamp(fillT, 0, 1)
-	obj.highlight.OutlineTransparency = math.clamp(outT, 0, 1)
-	obj.highlight.DepthMode = sharedEsp.HighlightThroughWalls.Value
-		and Enum.HighlightDepthMode.AlwaysOnTop
-		or Enum.HighlightDepthMode.Occluded
-	obj.highlight.Enabled = true
-else
-	obj.highlight.Enabled = false
-end
 end
 
 -- ═══════════════════════════════════════════
@@ -572,14 +584,6 @@ end
 local function OnEspPlayerAdded(player)
 	if player == EspLocalPlayer then return end
 	CreateEsp(player)
-	player.CharacterAdded:Connect(function()
-		task.wait(0.5)
-		local obj = EspObjects[player]
-		if obj then
-			obj.highlight.Parent = workspace
-			obj.highlight.Enabled = false
-		end
-	end)
 end
 
 for _, p in ipairs(EspPlayers:GetPlayers()) do
@@ -593,12 +597,17 @@ EspPlayers.PlayerRemoving:Connect(function(player)
 end)
 
 -- ═══════════════════════════════════════════
---  MAIN LOOP
+--  MAIN LOOP (OPTIMIZED)
 -- ═══════════════════════════════════════════
 EspRunService.Heartbeat:Connect(function(dt)
 	EspRainbowHue = (EspRainbowHue + 0.003) % 1
 	EspPulseTimer = EspPulseTimer + dt
+	
 	for player in pairs(EspObjects) do
-		UpdateEsp(player)
+		if player.Parent then
+			UpdateEsp(player)
+		else
+			DestroyEsp(player)
+		end
 	end
 end)
