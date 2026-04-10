@@ -1,5 +1,4 @@
--- Aimbot Handler - Unnamed Enhancements Style (No Shake Lock-On)
-print("ITS US")
+-- Aimbot Handler - Pure Smooth Lock (No Velocity Shake)
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
@@ -17,9 +16,6 @@ local settingsCounter = 0
 local fovCirclePos = nil
 local lastTime = tick()
 local fovCircle = nil
-
--- ── Target History for Prediction ────────────────────────────────────────────
-local TargetHistory = {}
 
 -- ── Settings ─────────────────────────────────────────────────────────────────
 local Active = false
@@ -95,46 +91,12 @@ local function IsInRange(part)
 	return studs <= distance
 end
 
--- ── ADVANCED PREDICTION (No Shake) ───────────────────────────────────────────
+-- ── PURE POSITION PREDICTION (NO VELOCITY) ──────────────────────────────────
 local function PredictPos(part)
 	if not part then return Vector3.zero end
-	
-	local partKey = part:GetFullName()
-	local history = TargetHistory[partKey] or {pos = part.Position, vel = Vector3.zero, time = tick()}
-	TargetHistory[partKey] = history
-	
-	local now = tick()
-	local dt = now - history.time
-	
-	if dt <= 0.001 then
-		return part.Position
-	end
-	
-	-- Calculate velocity from position change
-	local currentVel = (part.Position - history.pos) / dt
-	
-	-- Smooth velocity to avoid sudden jumps
-	history.vel = history.vel:Lerp(currentVel, 0.3)
-	history.pos = part.Position
-	history.time = now
-	
-	-- Only predict if target is moving
-	if history.vel.Magnitude < 0.1 then
-		return part.Position
-	end
-	
-	local dist = (part.Position - Camera.CFrame.Position).Magnitude
-	
-	if SmarterPredictions then
-		-- Predict based on smooth velocity
-		local travelTime = math.clamp((dist / 65) * 0.10, 0, 0.20)
-		return part.Position + history.vel * travelTime
-	else
-		-- Standard but smooth prediction
-		local travelTime = Prediction * (dist / 65) * (history.vel.Magnitude / 16)
-		travelTime = math.clamp(travelTime, 0, 0.15)
-		return part.Position + history.vel * travelTime
-	end
+	-- JUST RETURN THE POSITION - NO VELOCITY PREDICTION
+	-- This prevents shaking from velocity calculations
+	return part.Position
 end
 
 local function InFov(worldPos)
@@ -219,11 +181,10 @@ local function FindTarget()
 	return closest, bestScr
 end
 
--- ── ULTRA SMOOTH MOUSE MOVEMENT (No Jitter) ──────────────────────────────────
-local lastTargetPos = Vector2.new(0, 0)
-local mouseVelocity = Vector2.new(0, 0)
+-- ── PURE SMOOTH TRACKING (Position Only) ────────────────────────────────────
+local smoothedTarget = Vector2.new(0, 0)
 
-local function ApplySmoothMouseMove(targetWorldPos, dt)
+local function ApplyPureSmoothLock(targetWorldPos, dt)
 	if not targetWorldPos then return end
 	local vp = Camera:WorldToViewportPoint(targetWorldPos)
 	if vp.Z <= 0 then return end
@@ -232,36 +193,34 @@ local function ApplySmoothMouseMove(targetWorldPos, dt)
 	local mouse = UserInputService:GetMouseLocation()
 	local currentMousePos = Vector2.new(mouse.X, mouse.Y)
 
-	-- Calculate required movement
-	local dx = targetScreenPos.X - currentMousePos.X
-	local dy = targetScreenPos.Y - currentMousePos.Y
+	-- Smoothly interpolate toward target position (NOT velocity)
+	local lerpSpeed = 0.08 + (Strength * 0.05)
+	lerpSpeed = math.clamp(lerpSpeed, 0.05, 0.15)
+	smoothedTarget = smoothedTarget:Lerp(targetScreenPos, lerpSpeed)
+
+	local dx = smoothedTarget.X - currentMousePos.X
+	local dy = smoothedTarget.Y - currentMousePos.Y
 	local dist = math.sqrt(dx*dx + dy*dy)
 
-	-- Don't move for tiny distances (prevents jitter)
-	if dist < 1 then return end
+	-- Ignore tiny movements
+	if dist < 0.8 then return end
 	if math.random(100) > HitChance then return end
 
-	-- Ultra smooth interpolation
-	local smoothFactor = 0.15 + (Strength * 0.10)
-	smoothFactor = math.clamp(smoothFactor, 0.08, 0.25)
-	
-	mouseVelocity = mouseVelocity:Lerp(Vector2.new(dx, dy), smoothFactor)
-
-	-- Apply smoothness values
-	local frameScale = math.clamp(dt * 60, 0.3, 1.5)
-	local rateX = math.clamp(1 - Xsmoothness, 0.05, 0.6)
-	local rateY = math.clamp(1 - Ysmoothness, 0.05, 0.6)
+	-- Apply smoothness without fighting movement
+	local frameScale = math.clamp(dt * 60, 0.3, 1.2)
+	local rateX = math.clamp(1 - Xsmoothness, 0.08, 0.5)
+	local rateY = math.clamp(1 - Ysmoothness, 0.08, 0.5)
 	
 	local alphaX = 1 - (1 - rateX) ^ frameScale
 	local alphaY = 1 - (1 - rateY) ^ frameScale
 
-	-- Very conservative step sizes (no shake)
-	local maxStep = LegitAim and 18 or 35
-	local stepX = math.clamp(mouseVelocity.X * alphaX, -maxStep, maxStep)
-	local stepY = math.clamp(mouseVelocity.Y * alphaY, -maxStep, maxStep)
+	-- Very conservative movement
+	local maxStep = LegitAim and 16 or 30
+	local stepX = math.clamp(dx * alphaX, -maxStep, maxStep)
+	local stepY = math.clamp(dy * alphaY, -maxStep, maxStep)
 
-	local mx = math.round(stepX)
-	local my = math.round(stepY)
+	local mx = math.round(stepX * 0.9)
+	local my = math.round(stepY * 0.9)
 
 	if mx ~= 0 or my ~= 0 then
 		pcall(function() mousemoverel(mx, my) end)
@@ -284,7 +243,7 @@ local function UpdateFOVCircle()
 
 	local mousePos = UserInputService:GetMouseLocation()
 	local radius = (Fov / 180) * (Camera.ViewportSize.Y / 2)
-	fovCirclePos = fovCirclePos and fovCirclePos:Lerp(mousePos, 0.12) or mousePos
+	fovCirclePos = fovCirclePos and fovCirclePos:Lerp(mousePos, 0.1) or mousePos
 	fovCircle.Position = UDim2.new(0, fovCirclePos.X - radius, 0, fovCirclePos.Y - radius)
 	fovCircle.Size = UDim2.new(0, radius * 2, 0, radius * 2)
 
@@ -334,7 +293,7 @@ local function MainLoop()
 		currentTarget = nil
 		lockedTarget = nil
 		lockedAimPart = nil
-		mouseVelocity = Vector2.new(0, 0)
+		smoothedTarget = Vector2.new(0, 0)
 		return
 	end
 
@@ -342,13 +301,14 @@ local function MainLoop()
 	currentTarget = part
 
 	if part and screenPos then
-		ApplySmoothMouseMove(PredictPos(part), dt)
+		ApplyPureSmoothLock(PredictPos(part), dt)
 	end
 end
 
 task.delay(1, function()
 	fovCircle = shared.Aim.fovCircle
 	UpdateSettings()
+	smoothedTarget = UserInputService:GetMouseLocation()
 	RunService.RenderStepped:Connect(UpdateFOVCircle)
 	RunService.Heartbeat:Connect(MainLoop)
 end)
