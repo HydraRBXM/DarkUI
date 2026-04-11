@@ -1,5 +1,5 @@
 -- Aimbot Handler - v2 (Smarter Prediction Upgrade Integrated)
-print("i fucked her")
+
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
@@ -17,6 +17,14 @@ local settingsCounter = 0
 local fovCirclePos = nil
 local lastTime = tick()
 local fovCircle = nil
+
+local targetpart = nil
+local Mode = nil
+local AimKey = nil
+
+-- ✅ MODE SYSTEM STATE
+local toggleState = false
+local lastKeyState = false
 
 -- ── Drift ─────────────────────────────────────────────────
 local driftX, driftY = 0, 0
@@ -80,6 +88,10 @@ local function UpdateSettings()
 		Fov = math.clamp(tonumber(sharedAim["Fov"] and sharedAim["Fov"].Value) or 90, 1, 180)
 		Strength = math.clamp(tonumber(sharedAim["Strength"] and sharedAim["Strength"].Value) or 85, 0, 100) / 100
 		distance = math.clamp(tonumber(sharedAim["distance"] and sharedAim["distance"].Value) or 1000, 1, 10000)
+
+		Mode = (sharedAim["AimbotMode"] and sharedAim["AimbotMode"].Value) or "Hold"
+		AimKey = (sharedAim["AimbotActivateKey"] and sharedAim["AimbotActivateKey"].Value) or "MB2"
+		targetpart = (sharedAim["AimbotTargetPart"] and sharedAim["AimbotTargetPart"].Value) or "UpperTorso"
 	end)
 end
 
@@ -116,7 +128,6 @@ local function IsInRange(part)
 	return studs <= distance
 end
 
--- 🔥 UPGRADED PREDICTPOS
 local function PredictPos(part, dt)
 	if not part then return Vector3.zero end
 
@@ -128,21 +139,17 @@ local function PredictPos(part, dt)
 		return pos + vel * (Prediction * 0.01)
 	end
 
-	-- better velocity
 	local realVel = GetVelocity(part, dt)
 
-	-- acceleration
 	local lastVel = lastVelocities[part] or realVel
 	local accel = (realVel - lastVel)
 	lastVelocities[part] = realVel
 
 	local dist = (pos - Camera.CFrame.Position).Magnitude
 
-	-- dynamic travel time
 	local travelTime = (dist / 300) + (Prediction * 0.01)
 	travelTime = math.clamp(travelTime, 0.01, 0.35)
 
-	-- prevent overpredict
 	if realVel.Magnitude < 2 then
 		return pos
 	end
@@ -287,8 +294,16 @@ local function UpdateFOVCircle()
 	fovCircle.Visible = true
 end
 
+-- ✅ UPDATED KEY HANDLER (LINORIA SUPPORT)
 local function IsAimKeyDown()
-	return UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)
+	if AimKey == "MB2" then
+		return UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)
+	elseif AimKey == "MB1" then
+		return UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1)
+	else
+		local keyEnum = Enum.KeyCode[AimKey]
+		return keyEnum and UserInputService:IsKeyDown(keyEnum)
+	end
 end
 
 local function MainLoop()
@@ -299,7 +314,22 @@ local function MainLoop()
 	lastTime = now
 
 	UpdateSettings()
-	isAiming = Active and IsAimKeyDown()
+
+	local keyDown = IsAimKeyDown()
+
+	if Mode == "Hold" then
+		isAiming = Active and keyDown
+
+	elseif Mode == "Toggle" then
+		if keyDown and not lastKeyState then
+			toggleState = not toggleState
+		end
+		lastKeyState = keyDown
+		isAiming = Active and toggleState
+
+	elseif Mode == "Always" then
+		isAiming = Active
+	end
 
 	if not isAiming then
 		currentTarget = nil
