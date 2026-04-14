@@ -29,6 +29,12 @@ local EspRainbowHue = 0
 local EspPulseTimer = 0
 local LastUpdateTime = 0
 local UpdateInterval = 0.016
+local MaxEspRange = 1500  -- ✅ FIX #1: Maximum ESP render distance
+local tracerattachment = "BottomScreen" -- modes: BottomScreen, CenterScreen, TopScreen, Mouse -- this is in sharedEsp as "TracerAttachmentPoint"
+
+local function updatetracerattachment()
+    tracerattachment = shared.Esp.TracerAttachmentPoint.Value
+end
 
 local function GetPulseSpeed()
 	return 1.5
@@ -99,6 +105,16 @@ end
 local function EspIsTeammate(player)
 	if sharedEsp.EspIncludeTeammates.Value then return false end
 	return player.Team ~= nil and player.Team == EspLocalPlayer.Team
+end
+
+-- ✅ FIX #1: Add distance check function
+local function IsInEspRange(char)
+	local myChar = EspLocalPlayer.Character
+	local myHRP = myChar and myChar:FindFirstChild("HumanoidRootPart")
+	local hrp = char:FindFirstChild("HumanoidRootPart")
+	if not myHRP or not hrp then return false end
+	local distance = (hrp.Position - myHRP.Position).Magnitude
+	return distance <= MaxEspRange
 end
 
 -- ═══════════════════════════════════════════
@@ -215,6 +231,23 @@ local function GetHealthPct(char)
 	return math.clamp(hum.Health / math.max(hum.MaxHealth, 1), 0, 1)
 end
 
+-- ✅ FIX #2: Add tracer attachment calculation
+local function GetTracerAttachmentPoint(mode)
+	local vp = EspCamera.ViewportSize
+	
+	if mode == "BottomScreen" then
+		return Vector2.new(vp.X / 2, vp.Y)
+	elseif mode == "CenterScreen" then
+		return Vector2.new(vp.X / 2, vp.Y / 2)
+	elseif mode == "TopScreen" then
+		return Vector2.new(vp.X / 2, 0)
+	elseif mode == "Mouse" then
+		return UserInputService:GetMouseLocation()
+	else
+		return Vector2.new(vp.X / 2, vp.Y)
+	end
+end
+
 -- ═══════════════════════════════════════════
 --  FRAME / LABEL FACTORIES
 -- ═══════════════════════════════════════════
@@ -270,6 +303,33 @@ local BONES_R6 = {
 	{"Torso", "Left Leg"}, {"Torso", "Right Leg"},
 }
 
+-- ✅ FIX #3: Add tracer line drawing
+local function DrawTracerLine(obj, targetPos, color, thickness)
+	if not obj.tracerLine then
+		obj.tracerLine = MakeFrame(EspGui, 3)
+		obj.tracerLine.AnchorPoint = Vector2.new(0.5, 0)
+	end
+	
+	local attachment = GetTracerAttachmentPoint(tracerattachment)
+	local delta = targetPos - attachment
+	local length = delta.Magnitude
+	
+	if length < 1 then
+		obj.tracerLine.Visible = false
+		return
+	end
+	
+	local angle = math.atan2(delta.Y, delta.X)
+	local mid = (attachment + targetPos) * 0.5
+	
+	obj.tracerLine.Size = UDim2.new(0, length, 0, math.max(1, thickness or 1))
+	obj.tracerLine.Position = UDim2.new(0, mid.X, 0, mid.Y)
+	obj.tracerLine.Rotation = math.deg(angle)
+	obj.tracerLine.BackgroundColor3 = color
+	obj.tracerLine.BackgroundTransparency = 0
+	obj.tracerLine.Visible = true
+end
+
 -- ═══════════════════════════════════════════
 --  CREATE ESP
 -- ═══════════════════════════════════════════
@@ -314,6 +374,12 @@ local function CreateEsp(player)
 	hl.OutlineTransparency = 0
 	hl.Enabled = false
 	hl.Parent = HighlightFolder
+	
+	-- ✅ NEW: Tracer line
+    updatetracerattachment()
+    
+	local tracerLine = MakeFrame(EspGui, 3)
+	
 	EspObjects[player] = {
 		boxFrame = boxFrame,
 		boxStroke = boxStroke,
@@ -327,6 +393,7 @@ local function CreateEsp(player)
 		nameLabel = nameLabel,
 		distLabel = distLabel,
 		highlight = hl,
+		tracerLine = tracerLine,  -- ✅ NEW
 	}
 end
 
@@ -343,6 +410,7 @@ local function DestroyEsp(player)
 	pcall(function() obj.nameLabel:Destroy() end)
 	pcall(function() obj.distLabel:Destroy() end)
 	pcall(function() obj.highlight:Destroy() end)
+	pcall(function() obj.tracerLine:Destroy() end)  -- ✅ NEW
 	for _, f in ipairs(obj.corners) do pcall(function() f:Destroy() end) end
 	for _, f in ipairs(obj.skeleton) do pcall(function() f:Destroy() end) end
 	EspObjects[player] = nil
@@ -359,6 +427,7 @@ local function HideEsp(obj)
 	obj.nameLabel.Visible = false
 	obj.distLabel.Visible = false
 	obj.highlight.Enabled = false
+	obj.tracerLine.Visible = false  -- ✅ NEW
 	for _, f in ipairs(obj.corners) do f.Visible = false end
 	for _, f in ipairs(obj.skeleton) do f.Visible = false end
 end
@@ -411,6 +480,13 @@ local function UpdateEsp(player)
 	if EspIsTeammate(player) then HideEsp(obj); return end
 	local hrp = char:FindFirstChild("HumanoidRootPart")
 	if not hrp then HideEsp(obj); return end
+	
+	-- ✅ FIX #4: Check if player is in ESP range
+	if not IsInEspRange(char) then 
+		HideEsp(obj)
+		return 
+	end
+	
 	local _, hrpSP = IsOnScreen(hrp.Position)
 	if hrpSP.Z <= 0 then HideEsp(obj); return end
 	local x, y, w, h = GetBounds(char)
@@ -418,6 +494,8 @@ local function UpdateEsp(player)
 	local tk = 1.5
 	local font = GetEspFont()
 	local espColor = GetEspColor(sharedEsp.BoxESPColor.Value)
+
+    updatetracerattachment()
 
 	-- ── BOX ──────────────────────────────────
 	if sharedEsp.BoxESP.Value and onScreen then
@@ -575,6 +653,16 @@ local function UpdateEsp(player)
 		obj.highlight.Enabled = true
 	else
 		obj.highlight.Enabled = false
+	end
+	
+	-- ── TRACERS (NEW) ──────────────────────
+	local tracerEnabled = (sharedEsp.TracerESP and sharedEsp.TracerESP.Value) or false
+	if tracerEnabled and onScreen then
+		local targetPos = Vector2.new(hrpSP.X, hrpSP.Y)
+		local tracerColor = GetEspColor(sharedEsp.BoxESPColor.Value)
+		DrawTracerLine(obj, targetPos, tracerColor, 1.5)
+	else
+		obj.tracerLine.Visible = false
 	end
 end
 
