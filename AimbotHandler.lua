@@ -1,4 +1,5 @@
--- Aimbot Handler - v2 (Smarter Prediction Upgrade Integrated)
+-- Aimbot Handler - v2 IMPROVED (Critical Fixes Applied)
+-- Fixes: Target priority, targetpart selection, memory leaks, hit chance logic
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
@@ -13,7 +14,6 @@ local lockedAimPart = nil
 local cachedViewport = Vector2.zero
 local cachedCharacters = {}
 local lastCache = 0
-local settingsCounter = 0
 local fovCirclePos = nil
 local lastTime = tick()
 local fovCircle = nil
@@ -29,7 +29,7 @@ local lastKeyState = false
 -- ── Drift ─────────────────────────────────────────────────
 local driftX, driftY = 0, 0
 local driftSeedX = math.random() * 100
-local driftSeedY = math.random() * 100 + 50
+local driftSeedY = math.random() * 50 + 50
 
 -- ── Settings ──────────────────────────────────────────────
 local Active = false
@@ -47,7 +47,8 @@ local Fov = 90
 local Strength = 0.85
 local ShakeIntensity = 0
 local distance = 1000
-
+local targetpriority = "Closest"
+local Targetpart = "Head"
 local sharedAim = shared.Aim or nil
 local Toggles = getgenv().Toggles or {}
 local Options = getgenv().Options or {}
@@ -55,6 +56,16 @@ local Options = getgenv().Options or {}
 -- 🔥 SMART PRED STORAGE
 local lastVelocities = {}
 local lastPositions = {}
+
+-- ✅ FIX #6: Per-target hit chance tracking
+local targetHitChance = {}
+
+-- ✅ FIX #7: Team check safety
+local function SafeTeamCheck(plr)
+	if not TeamCheck or not plr then return false end
+	if not Player.Team or not plr.Team then return false end
+	return plr.Team == Player.Team
+end
 
 local function GetVelocity(part, dt)
 	local lastPos = lastPositions[part]
@@ -68,6 +79,23 @@ local function GetVelocity(part, dt)
 	local velocity = (currentPos - lastPos) / math.max(dt, 0.016)
 	lastPositions[part] = currentPos
 	return velocity
+end
+
+-- ✅ FIX #4: Velocity cache cleanup (prevent memory leak)
+local function CleanVelocityCache()
+	for part in pairs(lastVelocities) do
+		if not part or not part.Parent then
+			lastVelocities[part] = nil
+			lastPositions[part] = nil
+			targetHitChance[part] = nil
+		end
+	end
+	
+	for part in pairs(lastPositions) do
+		if not part or not part.Parent then
+			lastPositions[part] = nil
+		end
+	end
 end
 
 local function UpdateSettings()
@@ -92,6 +120,8 @@ local function UpdateSettings()
 		Mode = (sharedAim["AimbotMode"] and sharedAim["AimbotMode"].Value) or "Hold"
 		AimKey = (sharedAim["AimbotActivateKey"] and sharedAim["AimbotActivateKey"].Value) or "MB2"
 		targetpart = (sharedAim["AimbotTargetPart"] and sharedAim["AimbotTargetPart"].Value) or "UpperTorso"
+		targetpriority = (sharedAim["AimbotTargetPriority"] and sharedAim["AimbotTargetPriority"].Value) or "Closest"
+		Targetpart = (sharedAim["AimbotTargetPart"] and sharedAim["AimbotTargetPart"].Value) or "Head"
 	end)
 end
 
@@ -166,20 +196,43 @@ local function InFov(worldPos)
 	return dist <= rad, Vector2.new(screen.X, screen.Y)
 end
 
+-- ✅ FIX #2: Proper targetpart selection (respect user setting)
 local function ChooseAimPart(char)
-	local head = char:FindFirstChild("Head")
-	local torso = char:FindFirstChild("UpperTorso")
-		or char:FindFirstChild("Torso")
-		or char:FindFirstChild("HumanoidRootPart")
+	-- Use the Targetpart setting instead of RNG
+	if Targetpart == "Head" then
+		local head = char:FindFirstChild("Head")
+		if head then return head end
+	elseif Targetpart == "UpperTorso" then
+		local torso = char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso")
+		if torso then return torso end
+	elseif Targetpart == "LowerTorso" then
+		local lowerTorso = char:FindFirstChild("LowerTorso")
+		if lowerTorso then return lowerTorso end
+	elseif Targetpart == "LeftUpperArm" then
+		local arm = char:FindFirstChild("LeftUpperArm")
+		if arm then return arm end
+	elseif Targetpart == "RightUpperArm" then
+		local arm = char:FindFirstChild("RightUpperArm")
+		if arm then return arm end
+	end
 
-	if not head then return torso end
-
-	local r = math.random(100)
-	if r <= HeadshotChance then return head end
-	if r <= HeadshotChance + BodyShotChance then return torso end
+	-- Fallback to torso if preferred part not found
+	local torso = char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso") or char:FindFirstChild("HumanoidRootPart")
 	return torso
 end
 
+-- ✅ FIX #6: Per-target hit chance (not per-frame)
+local function ShouldHitTarget(part)
+	if not part then return true end
+	
+	if targetHitChance[part] == nil then
+		targetHitChance[part] = math.random(100) <= HitChance
+	end
+	
+	return targetHitChance[part]
+end
+
+-- ✅ FIX #1: Implement target priority selection
 local function FindTarget(dt)
 	RefreshCache()
 
@@ -203,11 +256,12 @@ local function FindTarget(dt)
 	lockedAimPart = nil
 
 	local screenCenter = cachedViewport * 0.5
-	local closest, minDist, bestScr = nil, math.huge, nil
+	local candidates = {}
 
+	-- Build candidate list
 	for _, char in cachedCharacters do
 		local plr = Players:GetPlayerFromCharacter(char)
-		if TeamCheck and plr and plr.Team == Player.Team then continue end
+		if SafeTeamCheck(plr) then continue end
 
 		local root = char:FindFirstChild("HumanoidRootPart")
 		if not root or not IsInRange(root) or not IsVisible(root) then continue end
@@ -217,21 +271,46 @@ local function FindTarget(dt)
 		local ok, scr = InFov(pred)
 
 		if ok and scr then
-			local d = (scr - screenCenter).Magnitude
-			if d < minDist then
-				minDist = d
-				closest = part
-				bestScr = scr
-			end
+			table.insert(candidates, {
+				part = part,
+				char = char,
+				screenPos = scr,
+				distance = (char:FindFirstChild("HumanoidRootPart").Position - Camera.CFrame.Position).Magnitude,
+				health = (char:FindFirstChildWhichIsA("Humanoid") and char:FindFirstChildWhichIsA("Humanoid").Health) or 100
+			})
 		end
 	end
 
-	if closest then
-		lockedTarget = closest.Parent
-		lockedAimPart = closest
+	-- Sort by priority
+	local closest = nil
+	local bestScr = nil
+
+	if #candidates > 0 then
+		if targetpriority == "Distance" then
+			table.sort(candidates, function(a, b) return a.distance < b.distance end)
+		elseif targetpriority == "Health" then
+			table.sort(candidates, function(a, b) return a.health < b.health end)
+		elseif targetpriority == "Random" then
+			closest = candidates[math.random(#candidates)]
+			bestScr = closest.screenPos
+			lockedTarget = closest.char
+			lockedAimPart = closest.part
+			return closest.part, bestScr
+		else
+			table.sort(candidates, function(a, b)
+				local distA = (a.screenPos - screenCenter).Magnitude
+				local distB = (b.screenPos - screenCenter).Magnitude
+				return distA < distB
+			end)
+		end
+
+		closest = candidates[1]
+		bestScr = closest.screenPos
+		lockedTarget = closest.char
+		lockedAimPart = closest.part
 	end
 
-	return closest, bestScr
+	return closest and closest.part or nil, bestScr
 end
 
 local function UpdateDrift(dt)
@@ -248,18 +327,39 @@ local function UpdateDrift(dt)
 	driftY = math.cos(driftSeedY * 2.7) * amp
 end
 
+-- ✅ FIX #5: Better aimkey handling (support all mouse buttons + keyboard)
+local function IsAimKeyDown()
+	if AimKey:match("^MB%d") then
+		local buttonNum = tonumber(AimKey:match("%d"))
+		if buttonNum then
+			return UserInputService:IsMouseButtonPressed(Enum.UserInputType["MouseButton" .. buttonNum])
+		end
+	else
+		local keyEnum = Enum.KeyCode[AimKey]
+		if keyEnum then
+			return UserInputService:IsKeyDown(keyEnum)
+		else
+			warn("Invalid aimbot key: " .. tostring(AimKey))
+			return false
+		end
+	end
+	return false
+end
+
 local function ApplyMouseMove(targetWorldPos, dt)
 	if not targetWorldPos then return end
+	if not currentTarget then return end
 
 	local vp = Camera:WorldToViewportPoint(targetWorldPos)
 	if vp.Z <= 0 then return end
+
+	-- ✅ FIX #6: Check hit chance per-target, not per-frame
+	if not ShouldHitTarget(currentTarget) then return end
 
 	local mouse = UserInputService:GetMouseLocation()
 
 	local dx = (vp.X + driftX) - mouse.X
 	local dy = (vp.Y + driftY) - mouse.Y
-
-	if math.random(100) > HitChance then return end
 
 	local smoothX = (1 - Xsmoothness) * Strength
 	local smoothY = (1 - Ysmoothness) * Strength
@@ -271,15 +371,17 @@ end
 
 local function UpdateFOVCircle()
 	if not fovCircle then 
-		fovCircle = shared.Aim.fovCircle
+		fovCircle = shared.Aim and shared.Aim.fovCircle or nil
 	end
+	
+	-- ✅ FIX #8: Better nil handling
 	if not fovCircle then return end
 
-	local showFov = shared.Aim.ShowFOV and shared.Aim.ShowFOV.Value or false
-	local aimbotActive = shared.Aim.Active and shared.Aim.Active.Value or false
+	local showFov = (shared.Aim and shared.Aim.ShowFOV and shared.Aim.ShowFOV.Value) or false
+	local aimbotActive = (shared.Aim and shared.Aim.Active and shared.Aim.Active.Value) or false
 
 	if not showFov or not aimbotActive then
-		fovCircle.Visible = false
+		pcall(function() fovCircle.Visible = false end)
 		return
 	end
 
@@ -288,22 +390,11 @@ local function UpdateFOVCircle()
 
 	fovCirclePos = fovCirclePos and fovCirclePos:Lerp(mousePos, 0.28) or mousePos
 
-	fovCircle.Position = UDim2.new(0, fovCirclePos.X - radius, 0, fovCirclePos.Y - radius)
-	fovCircle.Size = UDim2.new(0, radius * 2, 0, radius * 2)
-
-	fovCircle.Visible = true
-end
-
--- ✅ UPDATED KEY HANDLER (LINORIA SUPPORT)
-local function IsAimKeyDown()
-	if AimKey == "MB2" then
-		return UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)
-	elseif AimKey == "MB1" then
-		return UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1)
-	else
-		local keyEnum = Enum.KeyCode[AimKey]
-		return keyEnum and UserInputService:IsKeyDown(keyEnum)
-	end
+	pcall(function()
+		fovCircle.Position = UDim2.new(0, fovCirclePos.X - radius, 0, fovCirclePos.Y - radius)
+		fovCircle.Size = UDim2.new(0, radius * 2, 0, radius * 2)
+		fovCircle.Visible = true
+	end)
 end
 
 local function MainLoop()
@@ -314,6 +405,11 @@ local function MainLoop()
 	lastTime = now
 
 	UpdateSettings()
+
+	-- ✅ FIX #4: Clean cache periodically (every ~10 iterations)
+	if tick() - lastCache > 5 then
+		CleanVelocityCache()
+	end
 
 	local keyDown = IsAimKeyDown()
 
@@ -333,6 +429,7 @@ local function MainLoop()
 
 	if not isAiming then
 		currentTarget = nil
+		table.clear(targetHitChance)
 		return
 	end
 
@@ -347,9 +444,9 @@ local function MainLoop()
 end
 
 task.delay(1, function()
-	print("Updating aimbot...")
-	fovCircle = shared.Aim.fovCircle
+	print("[Aimbot v2 Improved] Updating aimbot...")
+	fovCircle = shared.Aim and shared.Aim.fovCircle or nil
 	RunService.RenderStepped:Connect(UpdateFOVCircle)
 	RunService.Heartbeat:Connect(MainLoop)
-	print("Loaded aimbot...")
+	print("[Aimbot v2 Improved] Loaded successfully!")
 end)
