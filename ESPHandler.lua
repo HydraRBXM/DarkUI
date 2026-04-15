@@ -3,7 +3,7 @@ local EspRunService = game:GetService("RunService")
 local EspCamera = workspace.CurrentCamera
 local EspLocalPlayer = EspPlayers.LocalPlayer
 local UserInputService = game:GetService("UserInputService")
-
+print("starting")
 -- ═══════════════════════════════════════════
 --  ESP GUI
 -- ═══════════════════════════════════════════
