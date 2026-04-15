@@ -267,12 +267,28 @@ end
 
 -- Key check
 local function IsAimKeyDown()
-	if AimKey:match("^MB%d") then
-		local num = tonumber(AimKey:match("%d"))
-		return UserInputService:IsMouseButtonPressed(Enum.UserInputType["MouseButton"..num])
-	else
-		return UserInputService:IsKeyDown(Enum.KeyCode[AimKey])
+	-- 🔥 FIX: handle nil / invalid AimKey
+	if not AimKey or AimKey == "" then
+		return false
 	end
+
+	-- Mouse buttons (MB1, MB2, etc)
+	if typeof(AimKey) == "string" and AimKey:match("^MB%d") then
+		local num = tonumber(AimKey:match("%d"))
+		if num then
+			return UserInputService:IsMouseButtonPressed(Enum.UserInputType["MouseButton"..num])
+		end
+	end
+
+	-- Keyboard keys
+	if typeof(AimKey) == "string" then
+		local keyEnum = Enum.KeyCode[AimKey]
+		if keyEnum then
+			return UserInputService:IsKeyDown(keyEnum)
+		end
+	end
+
+	return false
 end
 
 -- Apply aim (SMOOTH FIXED)
