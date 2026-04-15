@@ -292,6 +292,7 @@ local BONES_R6 = {
 --- Returns the 2D screen origin for tracers based on tracerattachment mode.
 local function GetTracerOrigin()
 	local vp = EspCamera.ViewportSize
+
 	if tracerattachment == "BottomScreen" then
 		return Vector2.new(vp.X * 0.5, vp.Y)
 	elseif tracerattachment == "CenterScreen" then
@@ -299,10 +300,11 @@ local function GetTracerOrigin()
 	elseif tracerattachment == "TopScreen" then
 		return Vector2.new(vp.X * 0.5, 0)
 	elseif tracerattachment == "Mouse" then
-		local mouse = EspLocalPlayer:GetMouse()
-		return Vector2.new(mouse.X, mouse.Y)
+		local pos = UserInputService:GetMouseLocation()
+		local inset = GuiService:GetGuiInset()
+		return Vector2.new(pos.X - inset.X, pos.Y - inset.Y)
 	end
-	-- fallback
+
 	return Vector2.new(vp.X * 0.5, vp.Y)
 end
 
