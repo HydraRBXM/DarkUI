@@ -14,7 +14,7 @@ local cachedViewport = Vector2.zero
 local cachedCharacters = {}
 local lastCache = 0
 local lastTime = tick()
-
+print("imcoming")
 local targetpart = nil
 local Mode = nil
 local AimKey = nil
