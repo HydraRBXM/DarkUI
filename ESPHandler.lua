@@ -1,5 +1,7 @@
 local EspPlayers = game:GetService("Players")
 local EspRunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local GuiService = game:GetService("GuiService")
 local EspCamera = workspace.CurrentCamera
 local EspLocalPlayer = EspPlayers.LocalPlayer
 
@@ -23,7 +25,7 @@ tracerGui.ResetOnSpawn = false
 tracerGui.IgnoreGuiInset = true
 tracerGui.DisplayOrder = 9997
 tracerGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-tracerGui.Parent = EspGui
+tracerGui.Parent = caninjectinto_COREGUI and game.CoreGui or EspLocalPlayer.PlayerGui
 
 -- ═══════════════════════════════════════════
 --  HIGHLIGHT FOLDER (unique GUID)
@@ -44,12 +46,18 @@ local LastUpdateTime = 0
 local UpdateInterval = 0.016
 local MaxRange       = 1500
 
--- Tracer origin modes: BottomScreen | CenterScreen | TopScreen | Mouse
-local tracerattachment = "BottomScreen"
+local sharedEsp = shared.Esp or nil
+
+local tracerAttachmentValue = sharedEsp and sharedEsp:FindFirstChild("TracerAttachmentPoint")
+local tracerattachment = (tracerAttachmentValue and tracerAttachmentValue.Value) or "BottomScreen"
+
+if tracerAttachmentValue then
+	tracerAttachmentValue.Changed:Connect(function()
+		tracerattachment = tracerAttachmentValue.Value
+	end)
+end
 
 local function GetPulseSpeed() return 1.5 end
-
-local sharedEsp = shared.Esp or nil
 
 -- ═══════════════════════════════════════════
 --  FONT MAP
@@ -288,11 +296,8 @@ local BONES_R6 = {
 -- ═══════════════════════════════════════════
 --  TRACER HELPERS
 -- ═══════════════════════════════════════════
-
---- Returns the 2D screen origin for tracers based on tracerattachment mode.
 local function GetTracerOrigin()
 	local vp = EspCamera.ViewportSize
-
 	if tracerattachment == "BottomScreen" then
 		return Vector2.new(vp.X * 0.5, vp.Y)
 	elseif tracerattachment == "CenterScreen" then
@@ -304,17 +309,15 @@ local function GetTracerOrigin()
 		local inset = GuiService:GetGuiInset()
 		return Vector2.new(pos.X - inset.X, pos.Y - inset.Y)
 	end
-
 	return Vector2.new(vp.X * 0.5, vp.Y)
 end
 
---- Allocates two Frames (outline + line) for a tracer. Only called once per player.
 local function MakeTracerLine(color)
 	local function F(col, zindex)
 		local f = Instance.new("Frame")
 		f.BorderSizePixel  = 0
 		f.BackgroundColor3 = col
-		f.AnchorPoint      = Vector2.new(0.5, 0.5)  -- centred so mid-point rotation is correct
+		f.AnchorPoint      = Vector2.new(0.5, 0.5)
 		f.ZIndex           = zindex
 		f.Visible          = false
 		f.Parent           = tracerGui
@@ -326,7 +329,6 @@ local function MakeTracerLine(color)
 	}
 end
 
---- Positions and shows an existing tracer pair. Pure math — no new instances.
 local function SetTracerLine(t, from, to, color)
 	local delta  = to - from
 	local length = delta.Magnitude
@@ -338,14 +340,12 @@ local function SetTracerLine(t, from, to, color)
 	local angle = math.atan2(delta.Y, delta.X)
 	local mid   = (from + to) * 0.5
 
-	-- outline  (3 px tall, semi-transparent black)
 	t.outline.BackgroundTransparency = 0.5
 	t.outline.Size     = UDim2.new(0, length, 0, 3)
 	t.outline.Position = UDim2.new(0, mid.X,  0, mid.Y)
 	t.outline.Rotation = math.deg(angle)
 	t.outline.Visible  = true
 
-	-- coloured line on top (1 px tall)
 	t.line.BackgroundColor3       = color
 	t.line.BackgroundTransparency = 0
 	t.line.Size     = UDim2.new(0, length, 0, 1)
@@ -354,11 +354,10 @@ local function SetTracerLine(t, from, to, color)
 	t.line.Visible  = true
 end
 
---- Destroys the cached tracer frames for a player and clears the entry.
 local function RemoveTracer(player)
 	local t = tracerCache[player]
 	if not t then return end
-	pcall(function() t.line:Destroy()    end)
+	pcall(function() t.line:Destroy() end)
 	pcall(function() t.outline:Destroy() end)
 	tracerCache[player] = nil
 end
@@ -437,7 +436,7 @@ end
 --  DESTROY ESP
 -- ═══════════════════════════════════════════
 local function DestroyEsp(player)
-	RemoveTracer(player)   -- clean up tracer frames first
+	RemoveTracer(player)
 	local obj = EspObjects[player]
 	if not obj then return end
 	pcall(function() obj.boxFrame:Destroy()   end)
@@ -465,7 +464,6 @@ local function HideEsp(obj, player)
 	obj.highlight.Enabled   = false
 	for _, f in ipairs(obj.corners)  do f.Visible = false end
 	for _, f in ipairs(obj.skeleton) do f.Visible = false end
-	-- hide tracer if it exists
 	if player then
 		local t = tracerCache[player]
 		if t then
@@ -497,14 +495,14 @@ end
 -- ═══════════════════════════════════════════
 local function DrawCornerBox(corners, x, y, w, h, color, tk)
 	local cLen = math.min(w, h) * 0.2
-	corners[1].Position = UDim2.new(0, x,           0, y);           corners[1].Size = UDim2.new(0, cLen, 0, tk)
-	corners[2].Position = UDim2.new(0, x,           0, y);           corners[2].Size = UDim2.new(0, tk,   0, cLen)
-	corners[3].Position = UDim2.new(0, x + w - cLen,0, y);           corners[3].Size = UDim2.new(0, cLen, 0, tk)
-	corners[4].Position = UDim2.new(0, x + w - tk,  0, y);           corners[4].Size = UDim2.new(0, tk,   0, cLen)
-	corners[5].Position = UDim2.new(0, x,           0, y + h - tk);  corners[5].Size = UDim2.new(0, cLen, 0, tk)
-	corners[6].Position = UDim2.new(0, x,           0, y + h - cLen);corners[6].Size = UDim2.new(0, tk,   0, cLen)
-	corners[7].Position = UDim2.new(0, x + w - cLen,0, y + h - tk);  corners[7].Size = UDim2.new(0, cLen, 0, tk)
-	corners[8].Position = UDim2.new(0, x + w - tk,  0, y + h - cLen);corners[8].Size = UDim2.new(0, tk,   0, cLen)
+	corners[1].Position = UDim2.new(0, x,            0, y);            corners[1].Size = UDim2.new(0, cLen, 0, tk)
+	corners[2].Position = UDim2.new(0, x,            0, y);            corners[2].Size = UDim2.new(0, tk,   0, cLen)
+	corners[3].Position = UDim2.new(0, x + w - cLen, 0, y);            corners[3].Size = UDim2.new(0, cLen, 0, tk)
+	corners[4].Position = UDim2.new(0, x + w - tk,   0, y);            corners[4].Size = UDim2.new(0, tk,   0, cLen)
+	corners[5].Position = UDim2.new(0, x,            0, y + h - tk);   corners[5].Size = UDim2.new(0, cLen, 0, tk)
+	corners[6].Position = UDim2.new(0, x,            0, y + h - cLen); corners[6].Size = UDim2.new(0, tk,   0, cLen)
+	corners[7].Position = UDim2.new(0, x + w - cLen, 0, y + h - tk);   corners[7].Size = UDim2.new(0, cLen, 0, tk)
+	corners[8].Position = UDim2.new(0, x + w - tk,   0, y + h - cLen); corners[8].Size = UDim2.new(0, tk,   0, cLen)
 	for _, c in ipairs(corners) do
 		c.BackgroundColor3 = color
 		c.Visible = true
@@ -536,7 +534,6 @@ local function UpdateEsp(player)
 	local font       = GetEspFont()
 	local espColor   = GetEspColor(sharedEsp.BoxESPColor.Value)
 
-	-- ── BOX ──────────────────────────────────
 	if sharedEsp.BoxESP.Value and onScreen then
 		local boxMode = sharedEsp.BoxESPMode.Value
 		if boxMode == 'Corner' then
@@ -569,7 +566,6 @@ local function UpdateEsp(player)
 		for _, f in ipairs(obj.corners) do f.Visible = false end
 	end
 
-	-- ── FILL ─────────────────────────────────
 	if sharedEsp.FillESP.Value and onScreen then
 		local fc = GetEspColor(sharedEsp.FillESPColor.Value)
 		obj.fill.Position               = UDim2.new(0, x, 0, y)
@@ -581,7 +577,6 @@ local function UpdateEsp(player)
 		obj.fill.Visible = false
 	end
 
-	-- ── HEALTHBAR ────────────────────────────
 	if sharedEsp.HealthBarESP.Value and onScreen then
 		local pct  = GetHealthPct(char)
 		local hbW  = sharedEsp.HealthBarThickness.Value
@@ -605,7 +600,6 @@ local function UpdateEsp(player)
 		obj.hbBg.Visible = false
 	end
 
-	-- ── SKELETON ─────────────────────────────
 	if sharedEsp.SkeletonESP.Value then
 		local sc           = GetEspColor(sharedEsp.SkeletonESPColor.Value)
 		local thickness    = sharedEsp.SkeletonESPThickness.Value
@@ -630,11 +624,9 @@ local function UpdateEsp(player)
 		for _, f in ipairs(obj.skeleton) do f.Visible = false end
 	end
 
-	-- ── NAME ─────────────────────────────────
 	if sharedEsp.NameESP.Value and onScreen then
 		local nc   = GetEspColor(sharedEsp.NameTextColor.Value)
 		local offX = sharedEsp.NameXOffset.Value
-		local offY = sharedEsp.NameYOffset.Value
 		obj.nameLabel.Text          = GetNameStr(player)
 		obj.nameLabel.TextColor3    = nc
 		obj.nameLabel.Font          = font
@@ -647,7 +639,6 @@ local function UpdateEsp(player)
 		obj.nameLabel.Visible = false
 	end
 
-	-- ── DISTANCE ─────────────────────────────
 	local showDist = (sharedEsp.DistanceESP and sharedEsp.DistanceESP.Value) or false
 	if showDist and onScreen then
 		local offX = sharedEsp.NameXOffset.Value
@@ -663,7 +654,6 @@ local function UpdateEsp(player)
 		obj.distLabel.Visible = false
 	end
 
-	-- ── HIGHLIGHT ────────────────────────────
 	if sharedEsp.HighlightEnabled.Value and hrp then
 		local fillColor    = GetHighlightColor(sharedEsp.HighlightFillColor.Value)
 		local outlineColor = GetHighlightColor(sharedEsp.HighlightOutlineColor.Value)
@@ -679,13 +669,11 @@ local function UpdateEsp(player)
 			local alpha = math.abs(math.sin(t * math.pi))
 			fillT = fillT + (1 - fillT) * alpha
 		end
-		if not obj.highlight:FindFirstChild("Adornee") then
-			obj.highlight.Adornee = char
-		end
+		obj.highlight.Adornee = char
 		obj.highlight.FillColor            = fillColor
 		obj.highlight.OutlineColor         = outlineColor
 		obj.highlight.FillTransparency     = math.clamp(fillT, 0, 1)
-		obj.highlight.OutlineTransparency  = math.clamp(outT, 0, 1)
+		obj.highlight.OutlineTransparency   = math.clamp(outT, 0, 1)
 		obj.highlight.DepthMode            = sharedEsp.HighlightThroughWalls.Value
 			and Enum.HighlightDepthMode.AlwaysOnTop
 			or  Enum.HighlightDepthMode.Occluded
@@ -694,31 +682,24 @@ local function UpdateEsp(player)
 		obj.highlight.Enabled = false
 	end
 
-	-- ── TRACER ───────────────────────────────
-	-- Origin: configurable screen point (bottom / center / top / mouse).
-	-- Target: top of HRP so the line visually "arrives" at the player model.
 	local showTracer = sharedEsp.TracerESP and sharedEsp.TracerESP.Value or false
 	if showTracer then
-		-- lazily allocate frames once per player — never re-created each frame
 		if not tracerCache[player] then
 			tracerCache[player] = MakeTracerLine(espColor)
 		end
 		local t = tracerCache[player]
-
-		-- project the top of the HRP to screen space
 		local targetWorld = hrp.Position + Vector3.new(0, hrp.Size.Y * 0.5, 0)
 		local targetSP, targetOn = EspCamera:WorldToViewportPoint(targetWorld)
 
 		if targetOn and targetSP.Z > 0 then
-			local origin = GetTracerOrigin()                    -- from   (screen origin)
-			local target = Vector2.new(targetSP.X, targetSP.Y) -- to     (player on screen)
+			local origin = GetTracerOrigin()
+			local target = Vector2.new(targetSP.X, targetSP.Y)
 			SetTracerLine(t, origin, target, espColor)
 		else
 			t.line.Visible    = false
 			t.outline.Visible = false
 		end
 	else
-		-- tracer toggled off — just hide existing frames, don't destroy them
 		local t = tracerCache[player]
 		if t then
 			t.line.Visible    = false
