@@ -1,20 +1,27 @@
--- ═══════════════════════════════════════════
---  CometESP  ·  Drawing API Edition
---  Optimized for max FPS — no Frame spam
--- ═══════════════════════════════════════════
 local EspPlayers       = game:GetService("Players")
 local EspRunService    = game:GetService("RunService")
 local EspCamera        = workspace.CurrentCamera
 local EspLocalPlayer   = EspPlayers.LocalPlayer
 local UserInputService = game:GetService("UserInputService")
 
-print("CometESP starting (Drawing API build)")
+print("CometESP starting (Hybrid build)")
 
 -- ═══════════════════════════════════════════
---  HIGHLIGHT FOLDER  (still uses Roblox Highlight)
+--  GUI LAYERS  (only for fill + healthbar)
+-- ═══════════════════════════════════════════
+local EspGui = Instance.new("ScreenGui")
+EspGui.Name            = "CometESP"
+EspGui.ResetOnSpawn    = false
+EspGui.IgnoreGuiInset  = true
+EspGui.DisplayOrder    = 9997
+EspGui.ZIndexBehavior  = Enum.ZIndexBehavior.Sibling
+EspGui.Parent          = (caninjectinto_COREGUI and game.CoreGui) or EspLocalPlayer.PlayerGui
+
+-- ═══════════════════════════════════════════
+--  HIGHLIGHT FOLDER
 -- ═══════════════════════════════════════════
 local HighlightFolder = Instance.new("Folder")
-HighlightFolder.Name  = game:GetService("HttpService"):GenerateGUID(true)
+HighlightFolder.Name   = game:GetService("HttpService"):GenerateGUID(true)
 HighlightFolder.Parent = workspace
 
 -- ═══════════════════════════════════════════
@@ -24,13 +31,10 @@ local EspObjects    = {}
 local EspRainbowHue = 0
 local EspPulseTimer = 0
 local sharedEsp     = shared.Esp or nil
-
--- Pre-computed this frame, shared across all players
-local _frameColor   = Color3.new(1,1,1)
-local _vpSize       = Vector2.new(1,1)
+local _frameColor   = Color3.new(1, 1, 1)  -- computed once per heartbeat
 
 -- ═══════════════════════════════════════════
---  FONT MAP  (kept for name/dist labels)
+--  FONT MAP
 -- ═══════════════════════════════════════════
 local FontMap = {
     ['Proggy Clean'] = Drawing.Fonts.Monospace,
@@ -50,19 +54,17 @@ local function GetNameStr(player)
 end
 
 -- ═══════════════════════════════════════════
---  COLORING  (computed once/frame at top of heartbeat)
+--  COLORING
 -- ═══════════════════════════════════════════
-local function ComputeFrameColor(baseColor)
+local function ComputeColor(baseColor)
     local mode = sharedEsp['ESP Coloring'].Value
     if mode == 'Rainbow' then
         return Color3.fromHSV(EspRainbowHue, 1, 1)
     elseif mode == 'Gradient' then
         return Color3.fromHSV((EspRainbowHue + 0.33) % 1, 0.85, 1)
     elseif mode == 'Pulse' then
-        local speed = 1.5
-        local t     = (EspPulseTimer % speed) / speed
-        local alpha = math.abs(math.sin(t * math.pi))
-        return sharedEsp.EspPulseColor.Value:Lerp(Color3.new(1,1,1), alpha)
+        local t = (EspPulseTimer % 1.5) / 1.5
+        return sharedEsp.EspPulseColor.Value:Lerp(Color3.new(1,1,1), math.abs(math.sin(t * math.pi)))
     elseif mode == 'Custom Color' then
         return sharedEsp.EspCustomColor.Value
     elseif mode == 'Team Color' then
@@ -108,8 +110,7 @@ local function GetBoundsFixed(char, cam)
     if not topOn or not botOn or topSP.Z <= 0 or botSP.Z <= 0 then return nil end
     local h = botSP.Y - topSP.Y
     if h <= 2 then return nil end
-    local scaler = sharedEsp.EspFixedWidthScaler.Value / 100
-    local w = h * 0.6 * scaler
+    local w = h * 0.6 * (sharedEsp.EspFixedWidthScaler.Value / 100)
     return topSP.X - w * 0.5, topSP.Y, w, h
 end
 
@@ -127,8 +128,8 @@ local function GetBoundsAccurate(char, cam)
     if torso then
         local halfW = torso.Size.X * 0.5
         local root  = hrp.CFrame
-        local lSP   = cam:WorldToViewportPoint((root * CFrame.new(-halfW,0,0)).Position)
-        local rSP   = cam:WorldToViewportPoint((root * CFrame.new( halfW,0,0)).Position)
+        local lSP   = cam:WorldToViewportPoint((root * CFrame.new(-halfW, 0, 0)).Position)
+        local rSP   = cam:WorldToViewportPoint((root * CFrame.new( halfW, 0, 0)).Position)
         w = math.clamp(math.abs(rSP.X - lSP.X), h * 0.25, h * 1.5)
     else
         w = h * 0.6
@@ -136,8 +137,7 @@ local function GetBoundsAccurate(char, cam)
     return topSP.X - w * 0.5, topSP.Y, w, h
 end
 
--- Automatic (full bounding box scan — expensive, only used when mode == Automatic)
-local _CORNER_SIGNS = {
+local _SIGNS = {
     Vector3.new( 1, 1, 1), Vector3.new(-1, 1, 1),
     Vector3.new( 1,-1, 1), Vector3.new(-1,-1, 1),
     Vector3.new( 1, 1,-1), Vector3.new(-1, 1,-1),
@@ -147,9 +147,8 @@ local function GetBoundsAutomatic(char, cam)
     local minX, minY, maxX, maxY
     for _, part in ipairs(char:GetDescendants()) do
         if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
-            local cf = part.CFrame
-            local hs = part.Size * 0.5
-            for _, s in ipairs(_CORNER_SIGNS) do
+            local cf, hs = part.CFrame, part.Size * 0.5
+            for _, s in ipairs(_SIGNS) do
                 local sp, on = cam:WorldToViewportPoint((cf * CFrame.new(hs * s)).Position)
                 if on and sp.Z > 0 then
                     minX = math.min(minX or sp.X, sp.X)
@@ -168,9 +167,9 @@ end
 
 local function GetBounds(char, cam)
     local mode = sharedEsp.EspBoundingMode.Value
-    if mode == 'Fixed'    then return GetBoundsFixed(char, cam)
+    if     mode == 'Fixed'    then return GetBoundsFixed(char, cam)
     elseif mode == 'Accurate' then return GetBoundsAccurate(char, cam)
-    else return GetBoundsAutomatic(char, cam) end
+    else                           return GetBoundsAutomatic(char, cam) end
 end
 
 -- ═══════════════════════════════════════════
@@ -178,10 +177,10 @@ end
 -- ═══════════════════════════════════════════
 local function GetTracerOrigin(vp)
     local mode = sharedEsp.TracerAttachmentPoint.Value
-    if mode == "BottomScreen"  then return Vector2.new(vp.X * 0.5, vp.Y)
-    elseif mode == "CenterScreen" then return Vector2.new(vp.X * 0.5, vp.Y * 0.5)
-    elseif mode == "TopScreen"    then return Vector2.new(vp.X * 0.5, 0)
-    elseif mode == "Mouse"        then
+    if     mode == "BottomScreen"  then return Vector2.new(vp.X * 0.5, vp.Y)
+    elseif mode == "CenterScreen"  then return Vector2.new(vp.X * 0.5, vp.Y * 0.5)
+    elseif mode == "TopScreen"     then return Vector2.new(vp.X * 0.5, 0)
+    elseif mode == "Mouse"         then
         local m = UserInputService:GetMouseLocation()
         return Vector2.new(m.X, m.Y)
     end
@@ -189,40 +188,56 @@ local function GetTracerOrigin(vp)
 end
 
 -- ═══════════════════════════════════════════
---  DRAWING HELPERS
+--  FACTORY HELPERS
 -- ═══════════════════════════════════════════
-local function D(class, props)
-    local d = Drawing.new(class)
-    for k, v in pairs(props) do d[k] = v end
-    return d
+local function NewLine(thickness, color)
+    local l = Drawing.new("Line")
+    l.Thickness = thickness or 1
+    l.Color     = color or Color3.new(1, 1, 1)
+    l.Visible   = false
+    return l
 end
 
-local function MakeText(size)
-    return D("Text", {
-        Size     = size or 13,
-        Font     = Drawing.Fonts.UI,
-        Color    = Color3.new(1,1,1),
-        Outline  = true,
-        OutlineColor = Color3.new(0,0,0),
-        Visible  = false,
-    })
+local function NewText(size)
+    local t = Drawing.new("Text")
+    t.Size         = size or 13
+    t.Font         = Drawing.Fonts.UI
+    t.Color        = Color3.new(1, 1, 1)
+    t.Outline      = true
+    t.OutlineColor = Color3.new(0, 0, 0)
+    t.Center       = true
+    t.Visible      = false
+    return t
 end
 
-local function MakeLine(thickness, color)
-    return D("Line", {
-        Thickness = thickness or 1,
-        Color     = color or Color3.new(1,1,1),
-        Visible   = false,
-    })
+local function NewCircle(thickness, color)
+    local c = Drawing.new("Circle")
+    c.Thickness = thickness or 1.5
+    c.Color     = color or Color3.new(1, 1, 1)
+    c.Filled    = false
+    c.Visible   = false
+    return c
 end
 
-local function MakeSquare(filled, color, trans)
-    return D("Square", {
-        Filled      = filled or false,
-        Color       = color or Color3.new(1,1,1),
-        Transparency = trans or 1,
-        Visible     = false,
-    })
+local function NewQuad(color)
+    local q = Drawing.new("Quad")
+    q.Color     = color or Color3.new(1, 1, 1)
+    q.Filled    = false
+    q.Thickness = 1.5
+    q.Visible   = false
+    return q
+end
+
+-- Frame helpers (only used for fill + healthbar)
+local function NewFrame(parent, zindex)
+    local f = Instance.new("Frame")
+    f.BackgroundColor3       = Color3.new(1, 1, 1)
+    f.BorderSizePixel        = 0
+    f.BackgroundTransparency = 0
+    f.Visible                = false
+    f.ZIndex                 = zindex or 5
+    f.Parent                 = parent or EspGui
+    return f
 end
 
 -- ═══════════════════════════════════════════
@@ -231,12 +246,12 @@ end
 local BONES_R15 = {
     {"Head","UpperTorso"},
     {"UpperTorso","LowerTorso"},
-    {"LowerTorso","LeftUpperLeg"}, {"LowerTorso","RightUpperLeg"},
-    {"LeftUpperLeg","LeftLowerLeg"}, {"RightUpperLeg","RightLowerLeg"},
+    {"LowerTorso","LeftUpperLeg"},  {"LowerTorso","RightUpperLeg"},
+    {"LeftUpperLeg","LeftLowerLeg"},{"RightUpperLeg","RightLowerLeg"},
     {"LeftLowerLeg","LeftFoot"},    {"RightLowerLeg","RightFoot"},
-    {"UpperTorso","LeftUpperArm"}, {"UpperTorso","RightUpperArm"},
+    {"UpperTorso","LeftUpperArm"},  {"UpperTorso","RightUpperArm"},
     {"LeftUpperArm","LeftLowerArm"},{"RightUpperArm","RightLowerArm"},
-    {"LeftLowerArm","LeftHand"},   {"RightLowerArm","RightHand"},
+    {"LeftLowerArm","LeftHand"},    {"RightLowerArm","RightHand"},
 }
 local BONES_R6 = {
     {"Head","Torso"},
@@ -246,52 +261,46 @@ local BONES_R6 = {
 local MAX_BONES = math.max(#BONES_R15, #BONES_R6)
 
 -- ═══════════════════════════════════════════
---  CREATE / DESTROY ESP
+--  CREATE ESP
 -- ═══════════════════════════════════════════
 local function CreateEsp(player)
     if EspObjects[player] then return end
 
-    -- Box: 4 lines for Corner mode OR 1 Square for Box mode
-    local boxLines = {}
-    for i = 1, 8 do  -- 8 lines cover corner brackets (2 per corner)
-        boxLines[i] = MakeLine(1.5, Color3.new(1,1,1))
-    end
-    local boxSquare = MakeSquare(false, Color3.new(1,1,1))
+    -- Corner box: 8 Drawing Lines
+    local cornerLines = {}
+    for i = 1, 8 do cornerLines[i] = NewLine(1.5) end
 
-    -- Circle: Drawing Circle
-    local circleD = D("Circle", {
-        Thickness  = 1.5,
-        Color      = Color3.new(1,1,1),
-        Filled     = false,
-        Visible    = false,
-    })
+    -- Full box: Drawing Quad (no UIStroke overhead)
+    local boxQuad = NewQuad()
 
-    -- Fill
-    local fillSquare = MakeSquare(true, Color3.new(1,1,1), 0.5)
+    -- Circle mode
+    local circleD = NewCircle(1.5)
 
-    -- Healthbar: background + fill (two Squares)
-    local hbBg   = D("Square", { Filled=true, Color=Color3.fromRGB(20,20,20), Transparency=1, Visible=false })
-    local hbFill = D("Square", { Filled=true, Color=Color3.fromRGB(0,255,0),  Transparency=1, Visible=false })
+    -- Fill: Frame (Drawing filled shapes unreliable cross-executor)
+    local fillFrame = NewFrame(EspGui, 4)
+    fillFrame.BackgroundTransparency = 0.5
 
-    -- Skeleton lines
+    -- Healthbar: 2 Frames (tiny count, negligible cost)
+    local hbBg   = NewFrame(EspGui, 5)
+    hbBg.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    local hbFill = NewFrame(hbBg, 6)
+    hbFill.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+
+    -- Skeleton: Drawing Lines (native, fast)
     local skeleton = {}
-    for i = 1, MAX_BONES do
-        skeleton[i] = MakeLine(1, Color3.new(1,1,1))
-    end
+    for i = 1, MAX_BONES do skeleton[i] = NewLine(1) end
 
-    -- Name + Distance text
-    local nameText = MakeText(13)
-    nameText.Center = true
+    -- Name + Distance: Drawing Text
+    local nameText = NewText(13)
+    local distText = NewText(11)
+    distText.Color = Color3.fromRGB(180, 180, 180)
 
-    local distText = MakeText(11)
-    distText.Center = true
-
-    -- Tracer
-    local tracerOutline = MakeLine(3, Color3.new(0,0,0))
-    local tracerLine    = MakeLine(1, Color3.new(1,1,1))
+    -- Tracer: outline + colored line
+    local tracerOutline = NewLine(3, Color3.new(0, 0, 0))
     tracerOutline.Transparency = 0.5
+    local tracerLine = NewLine(1)
 
-    -- Highlight (still Instance-based — no Drawing equivalent)
+    -- Highlight (Instance — no Drawing equivalent exists)
     local hl = Instance.new("Highlight")
     hl.FillTransparency    = 1
     hl.OutlineTransparency = 0
@@ -299,47 +308,50 @@ local function CreateEsp(player)
     hl.Parent              = HighlightFolder
 
     EspObjects[player] = {
-        boxLines     = boxLines,
-        boxSquare    = boxSquare,
-        circleD      = circleD,
-        fillSquare   = fillSquare,
-        hbBg         = hbBg,
-        hbFill       = hbFill,
-        skeleton     = skeleton,
-        nameText     = nameText,
-        distText     = distText,
-        tracerOutline= tracerOutline,
-        tracerLine   = tracerLine,
-        highlight    = hl,
+        cornerLines   = cornerLines,
+        boxQuad       = boxQuad,
+        circleD       = circleD,
+        fillFrame     = fillFrame,
+        hbBg          = hbBg,
+        hbFill        = hbFill,
+        skeleton      = skeleton,
+        nameText      = nameText,
+        distText      = distText,
+        tracerOutline = tracerOutline,
+        tracerLine    = tracerLine,
+        highlight     = hl,
     }
 end
 
+-- ═══════════════════════════════════════════
+--  DESTROY ESP
+-- ═══════════════════════════════════════════
 local function DestroyEsp(player)
     local obj = EspObjects[player]
     if not obj then return end
-    for _, v in pairs(obj) do
-        pcall(function()
-            if type(v) == "table" then
-                for _, d in ipairs(v) do d:Remove() end
-            elseif v.Remove then
-                v:Remove()
-            elseif v.Destroy then
-                v:Destroy()
-            end
-        end)
-    end
+    for _, l in ipairs(obj.cornerLines) do pcall(function() l:Remove() end) end
+    for _, l in ipairs(obj.skeleton)    do pcall(function() l:Remove() end) end
+    pcall(function() obj.boxQuad:Remove()       end)
+    pcall(function() obj.circleD:Remove()       end)
+    pcall(function() obj.nameText:Remove()      end)
+    pcall(function() obj.distText:Remove()      end)
+    pcall(function() obj.tracerOutline:Remove() end)
+    pcall(function() obj.tracerLine:Remove()    end)
+    pcall(function() obj.fillFrame:Destroy()    end)
+    pcall(function() obj.hbBg:Destroy()         end)
+    pcall(function() obj.highlight:Destroy()    end)
     EspObjects[player] = nil
 end
 
 -- ═══════════════════════════════════════════
---  HIDE ALL  (fast path)
+--  HIDE ALL  (fast, no allocation)
 -- ═══════════════════════════════════════════
 local function HideEsp(obj)
-    for _, bl in ipairs(obj.boxLines)  do bl.Visible = false end
-    for _, sk in ipairs(obj.skeleton)  do sk.Visible = false end
-    obj.boxSquare.Visible     = false
+    for _, l in ipairs(obj.cornerLines) do l.Visible = false end
+    for _, l in ipairs(obj.skeleton)    do l.Visible = false end
+    obj.boxQuad.Visible       = false
     obj.circleD.Visible       = false
-    obj.fillSquare.Visible    = false
+    obj.fillFrame.Visible     = false
     obj.hbBg.Visible          = false
     obj.hbFill.Visible        = false
     obj.nameText.Visible      = false
@@ -354,23 +366,33 @@ end
 -- ═══════════════════════════════════════════
 local function DrawCornerBox(lines, x, y, w, h, color, tk)
     local cL = math.min(w, h) * 0.2
-    -- top-left
-    lines[1].From=Vector2.new(x,y);        lines[1].To=Vector2.new(x+cL, y)
-    lines[2].From=Vector2.new(x,y);        lines[2].To=Vector2.new(x, y+cL)
-    -- top-right
-    lines[3].From=Vector2.new(x+w,y);     lines[3].To=Vector2.new(x+w-cL, y)
-    lines[4].From=Vector2.new(x+w,y);     lines[4].To=Vector2.new(x+w, y+cL)
-    -- bottom-left
-    lines[5].From=Vector2.new(x,y+h);     lines[5].To=Vector2.new(x+cL, y+h)
-    lines[6].From=Vector2.new(x,y+h);     lines[6].To=Vector2.new(x, y+h-cL)
-    -- bottom-right
-    lines[7].From=Vector2.new(x+w,y+h);   lines[7].To=Vector2.new(x+w-cL, y+h)
-    lines[8].From=Vector2.new(x+w,y+h);   lines[8].To=Vector2.new(x+w, y+h-cL)
+    lines[1].From = Vector2.new(x,   y);   lines[1].To = Vector2.new(x+cL, y)
+    lines[2].From = Vector2.new(x,   y);   lines[2].To = Vector2.new(x,    y+cL)
+    lines[3].From = Vector2.new(x+w, y);   lines[3].To = Vector2.new(x+w-cL, y)
+    lines[4].From = Vector2.new(x+w, y);   lines[4].To = Vector2.new(x+w,  y+cL)
+    lines[5].From = Vector2.new(x,   y+h); lines[5].To = Vector2.new(x+cL, y+h)
+    lines[6].From = Vector2.new(x,   y+h); lines[6].To = Vector2.new(x,    y+h-cL)
+    lines[7].From = Vector2.new(x+w, y+h); lines[7].To = Vector2.new(x+w-cL, y+h)
+    lines[8].From = Vector2.new(x+w, y+h); lines[8].To = Vector2.new(x+w,  y+h-cL)
     for _, l in ipairs(lines) do
         l.Color     = color
         l.Thickness = tk
         l.Visible   = true
     end
+end
+
+-- ═══════════════════════════════════════════
+--  FULL BOX  (Drawing Quad — no UIStroke)
+-- ═══════════════════════════════════════════
+local function DrawFullBox(quad, x, y, w, h, color, tk)
+    quad.PointA   = Vector2.new(x,     y)
+    quad.PointB   = Vector2.new(x + w, y)
+    quad.PointC   = Vector2.new(x + w, y + h)
+    quad.PointD   = Vector2.new(x,     y + h)
+    quad.Color    = color
+    quad.Thickness= tk
+    quad.Filled   = false
+    quad.Visible  = true
 end
 
 -- ═══════════════════════════════════════════
@@ -389,57 +411,52 @@ local function UpdateEsp(player, cam, vp, myHRP)
     local hrp = char:FindFirstChild("HumanoidRootPart")
     if not hrp then HideEsp(obj); return end
 
-    local hrpSP, hrpOn = cam:WorldToViewportPoint(hrp.Position)
+    local hrpSP = cam:WorldToViewportPoint(hrp.Position)
     if hrpSP.Z <= 0 then HideEsp(obj); return end
 
-    -- Bounds (needed for box/fill/healthbar/name/dist)
     local x, y, w, h = GetBounds(char, cam)
-    local onScreen = x ~= nil
-    local espColor = _frameColor  -- pre-computed this frame
+    local onScreen    = x ~= nil
+    local espColor    = _frameColor
+    local tk          = 1.5
 
     -- ── BOX ──────────────────────────────────
     if sharedEsp.BoxESP.Value and onScreen then
         local boxMode = sharedEsp.BoxESPMode.Value
         if boxMode == 'Corner' then
-            obj.boxSquare.Visible = false
-            obj.circleD.Visible   = false
-            DrawCornerBox(obj.boxLines, x, y, w, h, espColor, 1.5)
+            obj.boxQuad.Visible = false
+            obj.circleD.Visible = false
+            DrawCornerBox(obj.cornerLines, x, y, w, h, espColor, tk)
         elseif boxMode == 'Circle' then
-            for _, l in ipairs(obj.boxLines) do l.Visible = false end
-            obj.boxSquare.Visible  = false
-            local side = math.min(w, h)
-            obj.circleD.Position   = Vector2.new(x + w*0.5, y + h*0.5)
-            obj.circleD.Radius     = side * 0.5
-            obj.circleD.Color      = espColor
-            obj.circleD.Visible    = true
+            for _, l in ipairs(obj.cornerLines) do l.Visible = false end
+            obj.boxQuad.Visible  = false
+            obj.circleD.Position = Vector2.new(x + w * 0.5, y + h * 0.5)
+            obj.circleD.Radius   = math.min(w, h) * 0.5
+            obj.circleD.Color    = espColor
+            obj.circleD.Visible  = true
         else
-            for _, l in ipairs(obj.boxLines) do l.Visible = false end
-            obj.circleD.Visible    = false
-            obj.boxSquare.Position = Vector2.new(x, y)
-            obj.boxSquare.Size     = Vector2.new(w, h)
-            obj.boxSquare.Color    = espColor
-            obj.boxSquare.Thickness= 1.5
-            obj.boxSquare.Visible  = true
+            for _, l in ipairs(obj.cornerLines) do l.Visible = false end
+            obj.circleD.Visible = false
+            DrawFullBox(obj.boxQuad, x, y, w, h, espColor, tk)
         end
     else
-        for _, l in ipairs(obj.boxLines) do l.Visible = false end
-        obj.boxSquare.Visible = false
-        obj.circleD.Visible   = false
+        for _, l in ipairs(obj.cornerLines) do l.Visible = false end
+        obj.boxQuad.Visible = false
+        obj.circleD.Visible = false
     end
 
-    -- ── FILL ─────────────────────────────────
+    -- ── FILL  (Frame) ─────────────────────────
     if sharedEsp.FillESP.Value and onScreen then
-        local fc = ComputeFrameColor(sharedEsp.FillESPColor.Value)
-        obj.fillSquare.Position     = Vector2.new(x, y)
-        obj.fillSquare.Size         = Vector2.new(w, h)
-        obj.fillSquare.Color        = fc
-        obj.fillSquare.Transparency = math.clamp(sharedEsp.FillESPTransparency.Value / 100, 0, 1)
-        obj.fillSquare.Visible      = true
+        local fc = ComputeColor(sharedEsp.FillESPColor.Value)
+        obj.fillFrame.BackgroundColor3       = fc
+        obj.fillFrame.BackgroundTransparency = math.clamp(sharedEsp.FillESPTransparency.Value / 100, 0, 1)
+        obj.fillFrame.Position               = UDim2.fromOffset(x, y)
+        obj.fillFrame.Size                   = UDim2.fromOffset(w, h)
+        obj.fillFrame.Visible                = true
     else
-        obj.fillSquare.Visible = false
+        obj.fillFrame.Visible = false
     end
 
-    -- ── HEALTHBAR ────────────────────────────
+    -- ── HEALTHBAR  (Frames) ───────────────────
     if sharedEsp.HealthBarESP.Value and onScreen then
         local pct  = GetHealthPct(char)
         local hbW  = sharedEsp.HealthBarThickness.Value
@@ -449,29 +466,27 @@ local function UpdateEsp(player, cam, vp, myHRP)
         local hbH  = h * size
         local hbX  = x - hbW - 3 + offX
         local hbY  = y + offY
-        -- Background
-        obj.hbBg.Position    = Vector2.new(hbX, hbY)
-        obj.hbBg.Size        = Vector2.new(hbW, hbH)
-        obj.hbBg.Color       = sharedEsp.HealthBarBackgroundColor.Value
-        obj.hbBg.Transparency= math.clamp(sharedEsp.HealthBarBackgroundTransparency.Value/100,0,1)
-        obj.hbBg.Visible     = true
-        -- Fill (grows from bottom)
-        local fillH = hbH * pct
-        obj.hbFill.Position    = Vector2.new(hbX, hbY + hbH - fillH)
-        obj.hbFill.Size        = Vector2.new(hbW, fillH)
-        obj.hbFill.Color       = sharedEsp.HealthBarColor.Value
-        obj.hbFill.Transparency= math.clamp(sharedEsp.HealthBarTransparency.Value/100,0,1)
-        obj.hbFill.Visible     = true
+        obj.hbBg.BackgroundColor3       = sharedEsp.HealthBarBackgroundColor.Value
+        obj.hbBg.BackgroundTransparency = math.clamp(sharedEsp.HealthBarBackgroundTransparency.Value / 100, 0, 1)
+        obj.hbBg.Position               = UDim2.fromOffset(hbX, hbY)
+        obj.hbBg.Size                   = UDim2.fromOffset(hbW, hbH)
+        obj.hbBg.Visible                = true
+        obj.hbFill.AnchorPoint          = Vector2.new(0, 1)
+        obj.hbFill.Position             = UDim2.new(0, 0, 1, 0)
+        obj.hbFill.Size                 = UDim2.new(1, 0, pct, 0)
+        obj.hbFill.BackgroundColor3     = sharedEsp.HealthBarColor.Value
+        obj.hbFill.BackgroundTransparency = math.clamp(sharedEsp.HealthBarTransparency.Value / 100, 0, 1)
+        obj.hbFill.Visible              = true
     else
         obj.hbBg.Visible   = false
         obj.hbFill.Visible = false
     end
 
-    -- ── SKELETON ─────────────────────────────
+    -- ── SKELETON  (Drawing Lines) ─────────────
     if sharedEsp.SkeletonESP.Value then
-        local sc           = ComputeFrameColor(sharedEsp.SkeletonESPColor.Value)
+        local sc           = ComputeColor(sharedEsp.SkeletonESPColor.Value)
         local thickness    = sharedEsp.SkeletonESPThickness.Value
-        local transparency = math.clamp(sharedEsp.SkeletonESPTransparency.Value/100,0,1)
+        local transparency = math.clamp(sharedEsp.SkeletonESPTransparency.Value / 100, 0, 1)
         local isR6         = char:FindFirstChild("Torso") ~= nil
         local bones        = isR6 and BONES_R6 or BONES_R15
         for i, f in ipairs(obj.skeleton) do
@@ -499,14 +514,14 @@ local function UpdateEsp(player, cam, vp, myHRP)
 
     -- ── NAME ─────────────────────────────────
     if sharedEsp.NameESP.Value and onScreen then
-        local nc   = ComputeFrameColor(sharedEsp.NameTextColor.Value)
+        local nc   = ComputeColor(sharedEsp.NameTextColor.Value)
         local offX = sharedEsp.NameXOffset.Value
         local offY = sharedEsp.NameYOffset.Value
         obj.nameText.Text     = GetNameStr(player)
         obj.nameText.Color    = nc
         obj.nameText.Font     = GetEspFont()
         obj.nameText.Size     = 13
-        obj.nameText.Position = Vector2.new(x + w*0.5 + offX, y - 15 + offY)
+        obj.nameText.Position = Vector2.new(x + w * 0.5 + offX, y - 16 + offY)
         obj.nameText.Visible  = true
     else
         obj.nameText.Visible = false
@@ -517,9 +532,8 @@ local function UpdateEsp(player, cam, vp, myHRP)
     if showDist and onScreen and myHRP then
         local offX = sharedEsp.NameXOffset.Value
         obj.distText.Text     = GetDist(hrp, myHRP) .. "m"
-        obj.distText.Color    = Color3.fromRGB(180,180,180)
         obj.distText.Size     = 11
-        obj.distText.Position = Vector2.new(x + w*0.5 + offX, y + h + 4)
+        obj.distText.Position = Vector2.new(x + w * 0.5 + offX, y + h + 4)
         obj.distText.Visible  = true
     else
         obj.distText.Visible = false
@@ -527,24 +541,23 @@ local function UpdateEsp(player, cam, vp, myHRP)
 
     -- ── HIGHLIGHT ────────────────────────────
     if sharedEsp.HighlightEnabled.Value then
-        local fillColor    = ComputeFrameColor(sharedEsp.HighlightFillColor.Value)
-        local outlineColor = ComputeFrameColor(sharedEsp.HighlightOutlineColor.Value)
+        local fillColor    = ComputeColor(sharedEsp.HighlightFillColor.Value)
+        local outlineColor = ComputeColor(sharedEsp.HighlightOutlineColor.Value)
         local fillT        = math.clamp(sharedEsp.HighlightFillTransparency.Value, 0, 1)
         local outT         = math.clamp(sharedEsp.HighlightOutlineTransparency.Value, 0, 1)
         local extra        = sharedEsp.HighlightExtra.Value
         if extra == 'Flicker' then
             fillT = (math.random() > 0.4) and fillT or 1
         elseif extra == 'Breathe' then
-            local t     = (EspPulseTimer % 1.5) / 1.5
-            local alpha = math.abs(math.sin(t * math.pi))
-            fillT = fillT + (1 - fillT) * alpha
+            local t = (EspPulseTimer % 1.5) / 1.5
+            fillT = fillT + (1 - fillT) * math.abs(math.sin(t * math.pi))
         end
-        obj.highlight.Adornee              = char
-        obj.highlight.FillColor            = fillColor
-        obj.highlight.OutlineColor         = outlineColor
-        obj.highlight.FillTransparency     = math.clamp(fillT, 0, 1)
-        obj.highlight.OutlineTransparency  = math.clamp(outT, 0, 1)
-        obj.highlight.DepthMode            = sharedEsp.HighlightThroughWalls.Value
+        obj.highlight.Adornee             = char
+        obj.highlight.FillColor           = fillColor
+        obj.highlight.OutlineColor        = outlineColor
+        obj.highlight.FillTransparency    = math.clamp(fillT, 0, 1)
+        obj.highlight.OutlineTransparency = math.clamp(outT, 0, 1)
+        obj.highlight.DepthMode           = sharedEsp.HighlightThroughWalls.Value
             and Enum.HighlightDepthMode.AlwaysOnTop
             or  Enum.HighlightDepthMode.Occluded
         obj.highlight.Enabled = true
@@ -552,7 +565,7 @@ local function UpdateEsp(player, cam, vp, myHRP)
         obj.highlight.Enabled = false
     end
 
-    -- ── TRACER ───────────────────────────────
+    -- ── TRACER  (2 Drawing Lines) ─────────────
     local showTracer = sharedEsp.TracerESP and sharedEsp.TracerESP.Value
     if showTracer then
         local targetWorld  = hrp.Position + Vector3.new(0, hrp.Size.Y * 0.5, 0)
@@ -578,7 +591,7 @@ local function UpdateEsp(player, cam, vp, myHRP)
 end
 
 -- ═══════════════════════════════════════════
---  PLAYER ADDED / REMOVED
+--  PLAYER LIFECYCLE
 -- ═══════════════════════════════════════════
 local function OnEspPlayerAdded(player)
     if player == EspLocalPlayer then return end
@@ -590,21 +603,19 @@ EspPlayers.PlayerAdded:Connect(OnEspPlayerAdded)
 EspPlayers.PlayerRemoving:Connect(DestroyEsp)
 
 -- ═══════════════════════════════════════════
---  MAIN LOOP  — single Heartbeat, no GC spam
+--  MAIN LOOP
 -- ═══════════════════════════════════════════
 EspRunService.Heartbeat:Connect(function(dt)
-    -- Update shared timers & per-frame constants ONCE
     EspRainbowHue = (EspRainbowHue + 0.003) % 1
     EspPulseTimer = EspPulseTimer + dt
 
-    -- Cache viewport + camera + local HRP for this tick
-    local cam  = EspCamera
-    local vp   = cam.ViewportSize
-    local myC  = EspLocalPlayer.Character
-    local myHRP= myC and myC:FindFirstChild("HumanoidRootPart")
+    local cam   = EspCamera
+    local vp    = cam.ViewportSize
+    local myC   = EspLocalPlayer.Character
+    local myHRP = myC and myC:FindFirstChild("HumanoidRootPart")
 
-    -- Compute colour once per frame (base from BoxESPColor)
-    _frameColor = ComputeFrameColor(sharedEsp.BoxESPColor.Value)
+    -- compute box colour ONCE per frame, shared across all players
+    _frameColor = ComputeColor(sharedEsp.BoxESPColor.Value)
 
     for player in pairs(EspObjects) do
         if player.Parent then
