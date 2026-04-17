@@ -43,7 +43,7 @@ local EspRainbowHue = 0
 local EspPulseTimer = 0
 local LastUpdateTime = 0
 local UpdateInterval = 0.016
-local MaxRange = 1500
+local MaxRange = 300
 
 -- Tracer origin modes: BottomScreen | CenterScreen | TopScreen | Mouse
 local tracerattachment = "BottomScreen"
