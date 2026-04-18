@@ -7,13 +7,11 @@ local localPlayer = Players.LocalPlayer
 local camera = workspace.CurrentCamera
 
 local targetPlayer = nil
-
 local sharedsilent = shared.Silentaim
 
 local accuracy = 100
 local bodyshotchance = 98
 local headshotchance = 67
-
 local FOVsize = 80
 local ShowFov = true
 local active = false
@@ -32,12 +30,9 @@ local Circlefov = sharedsilent.sfovCircle
 
 local highlightCache = {}
 local hrpSizeCache = {}
-
 local lastAimActive = nil
 local lastActive = nil
 local lastIsLobby = nil
-local lastTarget = nil
-
 local toggleState = false
 local lastKeyState = false
 
@@ -45,25 +40,22 @@ local HRP_EXPANDED_SIZE = Vector3.new(6, 6, 6)
 
 local function updatesilentvalues()
 	pcall(function()
-		active = sharedsilent.sActive.Value
-		legit = sharedsilent.sLegit.Value
-		wallcheck = sharedsilent.sWallCheck.Value
-		teamcheck = sharedsilent.sTeamCheck.Value
-		distance = sharedsilent.sdistance.Value
+		active          = sharedsilent.sActive.Value
+		legit           = sharedsilent.sLegit.Value
+		wallcheck       = sharedsilent.sWallCheck.Value
+		teamcheck       = sharedsilent.sTeamCheck.Value
+		distance        = sharedsilent.sdistance.Value
 		target_priority = sharedsilent.sTargetPriority.Value
 		target_body_part = sharedsilent.sTargetBodyPart.Value
-		activatetoggle = sharedsilent.sSilentAimKey.Value
-		mode = sharedsilent.sMode
-		ShowFov = sharedsilent.sShowfov.Value
-		FOVsize = sharedsilent.sFov.Value
+		activatetoggle  = sharedsilent.sSilentAimKey.Value
+		mode            = sharedsilent.sMode
+		ShowFov         = sharedsilent.sShowfov.Value
+		FOVsize         = sharedsilent.sFov.Value
 		highlight_target = sharedsilent.sShowTarget.Value
-		accuracy = sharedsilent.sHitChance.Value
-		bodyshotchance = sharedsilent.sBodyShotChance.Value
-		headshotchance = sharedsilent.sHeadshotChance.Value
-
-		if ShowFov then
-			Circlefov.Visible = ShowFov
-		end
+		accuracy        = sharedsilent.sHitChance.Value
+		bodyshotchance  = sharedsilent.sBodyShotChance.Value
+		headshotchance  = sharedsilent.sHeadshotChance.Value
+		if ShowFov then Circlefov.Visible = ShowFov end
 	end)
 end
 
@@ -73,7 +65,6 @@ end
 
 local function isAimKeyDown()
 	if not activatetoggle then return false end
-
 	if activatetoggle:match("^MB%d") then
 		local buttonNum = tonumber(activatetoggle:match("%d"))
 		if buttonNum then
@@ -85,13 +76,11 @@ local function isAimKeyDown()
 			return UserInputService:IsKeyDown(keyEnum)
 		end
 	end
-
 	return false
 end
 
 local function isAimActive()
 	local keyDown = isAimKeyDown()
-
 	if mode == "Hold" then
 		return keyDown
 	elseif mode == "Toggle" then
@@ -103,7 +92,6 @@ local function isAimActive()
 	elseif mode == "Always" then
 		return true
 	end
-
 	return false
 end
 
@@ -130,9 +118,7 @@ end
 local function restoreAllHitboxes()
 	for character, originalSize in pairs(hrpSizeCache) do
 		local hrp = character:FindFirstChild("HumanoidRootPart")
-		if hrp then
-			hrp.Size = originalSize
-		end
+		if hrp then hrp.Size = originalSize end
 		hrpSizeCache[character] = nil
 	end
 end
@@ -144,11 +130,8 @@ local function updateHighlight()
 			highlightCache[player] = nil
 		end
 	end
-
 	if not highlight_target or not targetPlayer or not targetPlayer.Character then return end
-
 	local character = targetPlayer.Character
-
 	if not highlightCache[targetPlayer] then
 		local hl = Instance.new("Highlight")
 		hl.FillColor = Color3.fromRGB(255, 0, 0)
@@ -164,16 +147,16 @@ local function updateHighlight()
 	end
 end
 
+-- exact same logic as open source, just with your settings plugged in
 local function getTarget(origin)
 	local center = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y / 2)
 	local best, bestDist = nil, math.huge
-	local fovRadius = (FOVsize / 180) * (camera.ViewportSize.Y / 2)
+	local myChar = localPlayer.Character
 
-	for _, p in ipairs(Players:GetPlayers()) do
+	for _, p in pairs(Players:GetPlayers()) do
 		if p == localPlayer then continue end
 		local char = p.Character
-		if not char then continue end
-
+		if not char or char == myChar then continue end
 		if teamcheck and p.Team == localPlayer.Team then continue end
 
 		local head = char:FindFirstChild("Head")
@@ -182,16 +165,17 @@ local function getTarget(origin)
 		if (origin - head.Position).Magnitude > distance then continue end
 
 		if wallcheck then
-			local rayParams = RaycastParams.new()
-			rayParams.FilterDescendantsInstances = {localPlayer.Character, char}
-			rayParams.FilterType = Enum.RaycastFilterType.Exclude
-			local result = workspace:Raycast(camera.CFrame.Position, head.Position - camera.CFrame.Position, rayParams)
-			if result then continue end
+			local rp = RaycastParams.new()
+			rp.FilterDescendantsInstances = {myChar, char}
+			rp.FilterType = Enum.RaycastFilterType.Exclude
+			local res = workspace:Raycast(camera.CFrame.Position, head.Position - camera.CFrame.Position, rp)
+			if res then continue end
 		end
 
 		local sp, vis = camera:WorldToViewportPoint(head.Position)
 		if not vis then continue end
 
+		local fovRadius = (FOVsize / 180) * (camera.ViewportSize.Y / 2)
 		local d = (Vector2.new(sp.X, sp.Y) - center).Magnitude
 		if d < fovRadius and d < bestDist then
 			bestDist = d
@@ -200,30 +184,22 @@ local function getTarget(origin)
 		end
 	end
 
-	if not best then
-		targetPlayer = nil
-	end
-
+	if not best then targetPlayer = nil end
 	return best
 end
 
 local function UpdateFOVCircle()
 	local fovCircle = Circlefov
 	if not fovCircle then return end
-
 	local showFov = (sharedsilent and sharedsilent.sShowfov and sharedsilent.sShowfov.Value) or false
 	local aimbotActive = (sharedsilent and sharedsilent.sActive and sharedsilent.sActive.Value) or false
-
 	if not showFov or not aimbotActive then
 		pcall(function() fovCircle.Visible = false end)
 		return
 	end
-
 	local mousePos = UserInputService:GetMouseLocation()
 	local radius = (FOVsize / 180) * (camera.ViewportSize.Y / 2)
-
 	fovCirclePos = fovCirclePos and fovCirclePos:Lerp(mousePos, 0.28) or mousePos
-
 	pcall(function()
 		fovCircle.Position = UDim2.new(0, fovCirclePos.X - radius, 0, fovCirclePos.Y - radius)
 		fovCircle.Size = UDim2.new(0, radius * 2, 0, radius * 2)
@@ -231,18 +207,17 @@ local function UpdateFOVCircle()
 	end)
 end
 
+-- EXACTLY like open source: pass target.Position directly, no unit math
 local origRaycast = util.Raycast
 util.Raycast = function(self, origin, direction, dist, ...)
 	if active and not isLobbyVisible() and isAimActive() then
-		local head = getTarget(origin)
-
-		if head and math.random(1, 100) <= accuracy then
-			local rootPart = head.Parent:FindFirstChild("HumanoidRootPart")
+		local target = getTarget(origin)
+		if target and math.random(1, 100) <= accuracy then
+			local rootPart = target.Parent:FindFirstChild("HumanoidRootPart")
 			local velocity = rootPart and rootPart.AssemblyLinearVelocity or Vector3.zero
-			local pingSeconds = localPlayer:GetNetworkPing()
-			local predictedPos = head.Position + (velocity * pingSeconds)
-			local newDir = (predictedPos - origin).Unit * dist
-			return origRaycast(self, origin, newDir, dist, ...)
+			local ping = localPlayer:GetNetworkPing()
+			local predictedPos = target.Position + (velocity * ping)
+			return origRaycast(self, origin, predictedPos, dist, ...)
 		end
 	end
 	return origRaycast(self, origin, direction, dist, ...)
@@ -268,12 +243,10 @@ RunService:BindToRenderStep("SilentAim", Enum.RenderPriority.Camera.Value + 1, f
 		print("[SilentAim] Aim state: " .. tostring(aimActive))
 		lastAimActive = aimActive
 	end
-
 	if active ~= lastActive then
 		print("[SilentAim] Active changed: " .. tostring(active))
 		lastActive = active
 	end
-
 	if islobby ~= lastIsLobby then
 		print("[SilentAim] Lobby state: " .. tostring(islobby))
 		lastIsLobby = islobby
@@ -282,7 +255,6 @@ RunService:BindToRenderStep("SilentAim", Enum.RenderPriority.Camera.Value + 1, f
 	if not islobby and active and aimActive then
 		local myRoot = localPlayer.Character and localPlayer.Character:FindFirstChild("HumanoidRootPart")
 		getTarget(myRoot and myRoot.Position or camera.CFrame.Position)
-
 		if targetPlayer and targetPlayer.Character then
 			expandHitbox(targetPlayer.Character)
 		else
