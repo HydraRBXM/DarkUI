@@ -1,5 +1,5 @@
--- SILENT AIM v1 by oblivion
--- Completed
+-- SILENT AIM v1 FIXED by oblivion
+-- Fixed targeting logic
 
 local Players          = game:GetService("Players")
 local RunService       = game:GetService("RunService")
@@ -133,42 +133,37 @@ local function InFov(worldPos)
 end
 
 -- ═══════════════════════════════════════════
---  GET PLAYER IN FOV  (fixed – proper FOV radius check)
+--  GET CLOSEST PLAYER TO MOUSE (SIMPLIFIED)
 -- ═══════════════════════════════════════════
-local function GetPlayerInFov()
+local function GetClosestPlayerToMouse()
 	local closestPlayer  = nil
-	local shortestDist   = math.huge          -- start at infinity so any hit replaces it
+	local shortestDist   = math.huge
 	local mousePosition  = UserInputService:GetMouseLocation()
-	local fovRadius      = GetFovRadius()
 
 	for _, player in ipairs(Players:GetPlayers()) do
 		if player == localPlayer then continue end
-		if not player.Character  then continue end
+		if not player.Character then continue end
 
 		-- Team check
 		if TeamCheck and player.Team ~= nil and player.Team == localPlayer.Team then continue end
 
-		local aimPart = player.Character:FindFirstChild(Targetpart)
-			or player.Character:FindFirstChild("Head")
-		if not aimPart then continue end
+		local head = player.Character:FindFirstChild("Head")
+		if not head then continue end
 
-		-- Distance (studs) check
+		-- Distance check (studs)
 		local myChar = localPlayer.Character
 		local myHRP  = myChar and myChar:FindFirstChild("HumanoidRootPart")
-		if myHRP and (aimPart.Position - myHRP.Position).Magnitude > distance then continue end
+		if myHRP and (head.Position - myHRP.Position).Magnitude > distance then continue end
 
-		local sp, onScreen = camera:WorldToViewportPoint(aimPart.Position)
-		if not onScreen or sp.Z <= 0 then continue end
+		local headPosition, onScreen = camera:WorldToViewportPoint(head.Position)
+		if not onScreen or headPosition.Z <= 0 then continue end
 
-		local screenPos = Vector2.new(sp.X, sp.Y)
-		local pixelDist = (screenPos - mousePosition).Magnitude
-
-		-- Must be inside the FOV circle
-		if pixelDist > fovRadius then continue end
+		local screenPosition = Vector2.new(headPosition.X, headPosition.Y)
+		local pixelDist = (screenPosition - mousePosition).Magnitude
 
 		if pixelDist < shortestDist then
-			shortestDist  = pixelDist
 			closestPlayer = player
+			shortestDist = pixelDist
 		end
 	end
 
@@ -191,38 +186,6 @@ end
 local function IsInRange(part)
 	if not part or not part.Parent then return false end
 	return (part.Position - camera.CFrame.Position).Magnitude <= distance
-end
-
--- ═══════════════════════════════════════════
---  OBSTRUCTED BY ANOTHER PLAYER
---  (returns true if a *different* player's character is between us and the target)
--- ═══════════════════════════════════════════
-local function IsObstructedByPlayer(targetChar)
-	if not targetChar then return false end
-	local myChar = localPlayer.Character
-	if not myChar then return false end
-
-	local origin = camera.CFrame.Position
-	local hrp    = targetChar:FindFirstChild("HumanoidRootPart")
-	if not hrp then return false end
-
-	local dir = hrp.Position - origin
-
-	local rp = RaycastParams.new()
-	rp.FilterType = Enum.RaycastFilterType.Exclude
-	rp.FilterDescendantsInstances = {myChar, targetChar}
-	rp.IgnoreWater = true
-
-	local res = workspace:Raycast(origin, dir, rp)
-	if res and res.Instance then
-		-- hit something else – check if it belongs to another player
-		for _, p in Players:GetPlayers() do
-			if p ~= localPlayer and p.Character and res.Instance:IsDescendantOf(p.Character) then
-				return true
-			end
-		end
-	end
-	return false
 end
 
 -- ═══════════════════════════════════════════
@@ -258,22 +221,6 @@ local function ShouldHitTarget(part)
 end
 
 -- ═══════════════════════════════════════════
---  CHARACTER CACHE
--- ═══════════════════════════════════════════
-local function RefreshCache()
-	lastCache = tick()
-	table.clear(cachedCharacters)
-	for _, p in Players:GetPlayers() do
-		if p ~= localPlayer and p.Character then
-			local hum = p.Character:FindFirstChildWhichIsA("Humanoid")
-			if hum and hum.Health > 0 then
-				table.insert(cachedCharacters, p.Character)
-			end
-		end
-	end
-end
-
--- ═══════════════════════════════════════════
 --  DRIFT  (subtle humanisation)
 -- ═══════════════════════════════════════════
 local function UpdateDrift(dt)
@@ -282,95 +229,48 @@ local function UpdateDrift(dt)
 end
 
 -- ═══════════════════════════════════════════
---  FIND TARGET
+--  FIND TARGET (SIMPLIFIED - NO FOV LOCK)
 -- ═══════════════════════════════════════════
 local function FindTarget()
-	RefreshCache()
-
-	-- Re-use locked target if still valid
-	if lockedTarget and lockedTarget.Parent then
-		local hum = lockedTarget:FindFirstChildWhichIsA("Humanoid")
-		if hum and hum.Health > 0 then
-			local part = (lockedAimPart and lockedAimPart.Parent == lockedTarget)
-				and lockedAimPart or ChooseAimPart(lockedTarget)
-
-			if part and IsInRange(part) then
-				local ok, scr = InFov(part.Position)
-				if ok and IsVisible(part) and not IsObstructedByPlayer(lockedTarget) then
-					return part, scr
-				end
-			end
-		end
+	-- Get closest player to mouse (not restricted by FOV)
+	local targetPlayer = GetClosestPlayerToMouse()
+	
+	if not targetPlayer or not targetPlayer.Character then
+		lockedTarget = nil
+		lockedAimPart = nil
+		return nil, nil
 	end
 
-	lockedTarget  = nil
-	lockedAimPart = nil
+	-- Get aim part
+	local part = ChooseAimPart(targetPlayer.Character)
+	if not part then return nil, nil end
 
-	local screenCenter = cachedViewport * 0.5
-	local candidates   = {}
+	-- Get screen position
+	local sp, onScreen = camera:WorldToViewportPoint(part.Position)
+	if not onScreen or sp.Z <= 0 then return nil, nil end
 
-	for _, char in cachedCharacters do
-		local plr = Players:GetPlayerFromCharacter(char)
-		if SafeTeamCheck(plr) then continue end
+	local screenPos = Vector2.new(sp.X, sp.Y)
 
-		local root = char:FindFirstChild("HumanoidRootPart")
-		if not root or not IsInRange(root) then continue end
-		if not IsVisible(root) then continue end
-		if IsObstructedByPlayer(char) then continue end
+	lockedTarget = targetPlayer.Character
+	lockedAimPart = part
 
-		local part = ChooseAimPart(char)
-		if not part then continue end
-
-		local ok, scr = InFov(part.Position)
-		if ok and scr then
-			local hum = char:FindFirstChildWhichIsA("Humanoid")
-			table.insert(candidates, {
-				part      = part,
-				char      = char,
-				screenPos = scr,
-				distance  = (root.Position - camera.CFrame.Position).Magnitude,
-				health    = hum and hum.Health or 100,
-			})
-		end
-	end
-
-	if #candidates == 0 then return nil, nil end
-
-	if targetpriority == "Distance" then
-		table.sort(candidates, function(a, b) return a.distance < b.distance end)
-	elseif targetpriority == "Health" then
-		table.sort(candidates, function(a, b) return a.health < b.health end)
-	elseif targetpriority == "Random" then
-		local pick     = candidates[math.random(#candidates)]
-		lockedTarget   = pick.char
-		lockedAimPart  = pick.part
-		return pick.part, pick.screenPos
-	else -- Closest to crosshair
-		table.sort(candidates, function(a, b)
-			return (a.screenPos - screenCenter).Magnitude < (b.screenPos - screenCenter).Magnitude
-		end)
-	end
-
-	local best    = candidates[1]
-	lockedTarget  = best.char
-	lockedAimPart = best.part
-	return best.part, best.screenPos
+	return part, screenPos
 end
 
 -- ═══════════════════════════════════════════
 --  LEGIT MODE — lock camera toward target head
---  (same method as the reference in the task comments)
+--  (SIMPLIFIED - directly from working reference)
 -- ═══════════════════════════════════════════
 local function LegitLockCamera(targetChar)
 	if not targetChar then return end
 	local head = targetChar:FindFirstChild("Head")
 	if not head then return end
 
-	local headPos = camera:WorldToViewportPoint(head.Position)
-	if headPos.Z <= 0 then return end
+	local headPosition = camera:WorldToViewportPoint(head.Position)
+	if headPosition.Z <= 0 then return end
 
-	local camPos  = camera.CFrame.Position
-	camera.CFrame = CFrame.new(camPos, head.Position)
+	local cameraPosition = camera.CFrame.Position
+	camera.CFrame = CFrame.new(cameraPosition, head.Position)
 end
 
 -- ═══════════════════════════════════════════
@@ -528,9 +428,9 @@ end
 --  INIT
 -- ═══════════════════════════════════════════
 task.delay(1, function()
-	print("SILENT AIM v1 Loaded!333")
+	print("SILENT AIM v1 FIXED Loaded!")
 	fovCircle = silentshared and silentshared.fovCircle or nil
 	RunService.RenderStepped:Connect(UpdateFOVCircle)
 	RunService.Heartbeat:Connect(MainLoop)
-	print("SILENT AIM v1 Ready!")
+	print("SILENT AIM v1 FIXED Ready!")
 end)
