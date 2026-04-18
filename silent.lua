@@ -7,7 +7,6 @@ local UserInputService = game:GetService("UserInputService")
 
 local localPlayer = Players.LocalPlayer
 local camera = workspace.CurrentCamera
-
 local targetPlayer = nil
 local isLeftMouseDown = false
 local autoClickConnection = nil
