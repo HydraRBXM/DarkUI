@@ -266,9 +266,10 @@ local toggleState = false
 local wasAimKeyDown = false
 
 local function loop()
+	task.spawn(function()
+			 UpdateFOVCircle() -- this one is fine to keep or remove task.spawn, doesnt matter
+	)
     updatesilentvalues() -- sync, no task.spawn
-
-    UpdateFOVCircle() -- this one is fine to keep or remove task.spawn, doesnt matter
 
     local isaimkeydown = IsAimKeyDown()
     local islobby = isLobbyVisible()
