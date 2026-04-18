@@ -220,11 +220,11 @@ local function autoClick()
 		autoClickConnection:Disconnect()
 	end
 	autoClickConnection = RunService.Heartbeat:Connect(function()
-		if isLeftMouseDown then
+		if isRightMouseDown then
 			if not isLobbyVisible() then
-				mouse1press()
+				mouse2press()
 				task.wait()
-				mouse1release()
+				mouse2release()
 			end
 		else
 			autoClickConnection:Disconnect()
@@ -233,17 +233,17 @@ local function autoClick()
 end
 
 UserInputService.InputBegan:Connect(function(input, isProcessed)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 and not isProcessed then
-		if not isLeftMouseDown then
-			isLeftMouseDown = true
+	if input.UserInputType == Enum.UserInputType.MouseButton2 and not isProcessed then
+		if not isRightMouseDown then
+			isRightMouseDown = true
 			autoClick()
 		end
 	end
 end)
 
 UserInputService.InputEnded:Connect(function(input, isProcessed)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 and not isProcessed then
-		isLeftMouseDown = false
+	if input.UserInputType == Enum.UserInputType.MouseButton2 and not isProcessed then
+		isRightMouseDown = false
 	end
 end)
 
