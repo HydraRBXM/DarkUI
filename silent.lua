@@ -266,13 +266,15 @@ local toggleState = false
 local wasAimKeyDown = false
 
 local function loop()
-	task.spawn(function()
-    updatesilentvalues()
+	updatesilentvalues()
+	task.Spawn(function()
     UpdateFOVCircle()
-    end)
-
+	end)
     local isaimkeydown = IsAimKeyDown()
     local islobby = isLobbyVisible()
+
+    -- debug exactly what mode string is
+    print("[Loop] mode raw='" .. tostring(mode) .. "' | activatetoggle='" .. tostring(activatetoggle) .. "'")
 
     if mode == "Toggle" then
         if isaimkeydown and not wasAimKeyDown then
@@ -281,12 +283,14 @@ local function loop()
         wasAimKeyDown = isaimkeydown
     elseif mode == "Hold" then
         toggleState = isaimkeydown
-		print("togglestat ON!!!")
     elseif mode == "Always" then
         toggleState = true
+    else
+        -- mode string doesnt match anything, force it
+        print("[Loop] WARNING: mode didnt match Hold/Toggle/Always, got: '" .. tostring(mode) .. "'")
+        toggleState = isaimkeydown -- fallback to hold behavior
     end
 
-    -- ADD THESE:
     print("[Loop] active=" .. tostring(active) .. " | toggleState=" .. tostring(toggleState) .. " | islobby=" .. tostring(islobby) .. " | mode=" .. tostring(mode))
 
     if not islobby and active and toggleState then
@@ -296,7 +300,7 @@ local function loop()
             lockCameraToHead()
         end
     else
-        print("[Loop] BLOCKED — reason: " .. (islobby and "in lobby" or not active and "active=false" or not toggleState and "toggleState=false" or "unknown"))
+        print("[Loop] BLOCKED — " .. (islobby and "in lobby" or not active and "active=false" or not toggleState and "toggleState=false" or "unknown"))
         targetPlayer = nil
     end
 end
