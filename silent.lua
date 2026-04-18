@@ -1,6 +1,6 @@
 -- Due to the way I manipulate the camera, it is necessary to implement the shooting mechanics in this specific manner.
 -- WORKS ON ALL EXECUTORS
-print("test")
+
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -68,108 +68,134 @@ local function isLobbyVisible()
 end
 
 local function Getplayerinfov()
-	local target = nil
-	local bestScore = math.huge
-	local mousePos = UserInputService:GetMouseLocation()
-	local fovRadius = (FOVsize / 180) * (camera.ViewportSize.Y / 2)
+    local target = nil
+    local bestScore = math.huge
+    local mousePos = UserInputService:GetMouseLocation()
+    local fovRadius = (FOVsize / 180) * (camera.ViewportSize.Y / 2)
 
-	for _, player in ipairs(Players:GetPlayers()) do
-		if player == localPlayer then continue end
-		if not player.Character then continue end
+    local checkedCount = 0
+    local skippedCount = 0
 
-		-- Team check
-		if teamcheck and player.Team == localPlayer.Team then continue end
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player == localPlayer then continue end
+        if not player.Character then continue end
 
-		local character = player.Character
+        if teamcheck and player.Team == localPlayer.Team then
+            skippedCount += 1
+            print("[SilentAim] Skipped (team): " .. player.Name)
+            continue
+        end
 
-		-- Humanoid alive check
-		local humanoid = character:FindFirstChildOfClass("Humanoid")
-		if not humanoid or humanoid.Health <= 0 then continue end
+        local character = player.Character
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        if not humanoid or humanoid.Health <= 0 then
+            print("[SilentAim] Skipped (dead): " .. player.Name)
+            skippedCount += 1
+            continue
+        end
 
-		-- Root part for distance
-		local rootPart = character:FindFirstChild("HumanoidRootPart")
-		if not rootPart then continue end
+        local rootPart = character:FindFirstChild("HumanoidRootPart")
+        if not rootPart then continue end
 
-		-- Distance check
-		local myRoot = localPlayer.Character and localPlayer.Character:FindFirstChild("HumanoidRootPart")
-		local dist = myRoot and (rootPart.Position - myRoot.Position).Magnitude or math.huge
-		if dist > distance then continue end
+        local myRoot = localPlayer.Character and localPlayer.Character:FindFirstChild("HumanoidRootPart")
+        local dist = myRoot and (rootPart.Position - myRoot.Position).Magnitude or math.huge
+        if dist > distance then
+            print("[SilentAim] Skipped (distance " .. math.floor(dist) .. " > " .. distance .. "): " .. player.Name)
+            skippedCount += 1
+            continue
+        end
 
-		-- Resolve target body part
-		local targetPart = character:FindFirstChild(target_body_part)
-			or character:FindFirstChild("UpperTorso")
-			or rootPart
-		if not targetPart then continue end
+        local targetPart = character:FindFirstChild(target_body_part)
+            or character:FindFirstChild("UpperTorso")
+            or rootPart
+        if not targetPart then continue end
 
-		-- Screen position / FOV check
-		local screenPos, onScreen = camera:WorldToViewportPoint(targetPart.Position)
-		if not onScreen then continue end
-		local screenVec = Vector2.new(screenPos.X, screenPos.Y)
-		local distToCrosshair = (screenVec - mousePos).Magnitude
-		if distToCrosshair > fovRadius then continue end
+        local screenPos, onScreen = camera:WorldToViewportPoint(targetPart.Position)
+        if not onScreen then
+            print("[SilentAim] Skipped (off screen): " .. player.Name)
+            skippedCount += 1
+            continue
+        end
 
-		-- Wall check
-		if wallcheck then
-			local origin = camera.CFrame.Position
-			local direction = targetPart.Position - origin
-			local rayParams = RaycastParams.new()
-			rayParams.FilterDescendantsInstances = {localPlayer.Character, character}
-			rayParams.FilterType = Enum.RaycastFilterType.Exclude
-			local result = workspace:Raycast(origin, direction, rayParams)
-			if result then continue end
-		end
+        local screenVec = Vector2.new(screenPos.X, screenPos.Y)
+        local distToCrosshair = (screenVec - mousePos).Magnitude
+        if distToCrosshair > fovRadius then
+            print("[SilentAim] Skipped (outside FOV, dist=" .. math.floor(distToCrosshair) .. " radius=" .. math.floor(fovRadius) .. "): " .. player.Name)
+            skippedCount += 1
+            continue
+        end
 
-		-- Accuracy/hit chance check
-		if math.random(1, 100) > accuracy then continue end
+        if wallcheck then
+            local origin = camera.CFrame.Position
+            local direction = targetPart.Position - origin
+            local rayParams = RaycastParams.new()
+            rayParams.FilterDescendantsInstances = {localPlayer.Character, character}
+            rayParams.FilterType = Enum.RaycastFilterType.Exclude
+            local result = workspace:Raycast(origin, direction, rayParams)
+            if result then
+                print("[SilentAim] Skipped (wall blocked): " .. player.Name)
+                skippedCount += 1
+                continue
+            end
+        end
 
-		-- Priority scoring
-		local score
-		if target_priority == "Closest To Crosshair" or target_priority == "Closest" then
-			score = distToCrosshair
-		elseif target_priority == "Distance" then
-			score = dist
-		elseif target_priority == "Health" then
-			score = humanoid.Health
-		elseif target_priority == "Random" then
-			score = math.random()
-		else
-			score = distToCrosshair
-		end
+        if math.random(1, 100) > accuracy then
+            print("[SilentAim] Skipped (accuracy roll failed): " .. player.Name)
+            skippedCount += 1
+            continue
+        end
 
-		if score < bestScore then
-			bestScore = score
-			target = player
-		end
-	end
+        local score
+        if target_priority == "Closest To Crosshair" or target_priority == "Closest" then
+            score = distToCrosshair
+        elseif target_priority == "Distance" then
+            score = dist
+        elseif target_priority == "Health" then
+            score = humanoid.Health
+        elseif target_priority == "Random" then
+            score = math.random()
+        else
+            score = distToCrosshair
+        end
 
-	return target
+        checkedCount += 1
+        print("[SilentAim] Valid candidate: " .. player.Name .. " | Score: " .. string.format("%.2f", score) .. " | Dist: " .. math.floor(dist) .. " | CrosshairDist: " .. math.floor(distToCrosshair))
+
+        if score < bestScore then
+            bestScore = score
+            target = player
+        end
+    end
+
+    print("[SilentAim] Scan done — Checked: " .. checkedCount .. " | Skipped: " .. skippedCount .. " | Target: " .. (target and target.Name or "nil"))
+    return target
 end
 
 local function lockCameraToHead()
-	if not targetPlayer or not targetPlayer.Character then return end
+    if not targetPlayer or not targetPlayer.Character then return end
 
-	local character = targetPlayer.Character
+    local character = targetPlayer.Character
+    local partName = target_body_part
+    local roll = math.random(1, 100)
+    if roll <= headshotchance then
+        partName = "Head"
+    elseif roll <= headshotchance + bodyshotchance then
+        partName = "UpperTorso"
+    end
 
-	-- Decide part based on headshot/bodyshot chance
-	local partName = target_body_part
-	local roll = math.random(1, 100)
-	if roll <= headshotchance then
-		partName = "Head"
-	elseif roll <= headshotchance + bodyshotchance then
-		partName = "UpperTorso"
-	end
+    local part = character:FindFirstChild(partName)
+        or character:FindFirstChild("UpperTorso")
+        or character:FindFirstChild("HumanoidRootPart")
 
-	local part = character:FindFirstChild(partName)
-		or character:FindFirstChild("UpperTorso")
-		or character:FindFirstChild("HumanoidRootPart")
+    if not part then return end
 
-	if not part then return end
+    print("[SilentAim] Locking to: " .. targetPlayer.Name .. " | Part: " .. part.Name .. " | Roll: " .. roll)
 
-	local screenPos = camera:WorldToViewportPoint(part.Position)
-	if screenPos.Z > 0 then
-		local cameraPosition = camera.CFrame.Position
-		camera.CFrame = CFrame.new(cameraPosition, part.Position)
-	end
+    local screenPos = camera:WorldToViewportPoint(part.Position)
+    if screenPos.Z > 0 then
+        local cameraPosition = camera.CFrame.Position
+        camera.CFrame = CFrame.new(cameraPosition, part.Position)
+    end
 end
 
 -- autoclick (not used, kept for reference)
@@ -189,19 +215,27 @@ local function autoClick()
 end
 
 local function IsAimKeyDown()
-	local AimKey = activatetoggle
-	if AimKey and AimKey:match("^MB%d") then
-		local buttonNum = tonumber(AimKey:match("%d"))
-		if buttonNum then
-			return UserInputService:IsMouseButtonPressed(Enum.UserInputType["MouseButton" .. buttonNum])
-		end
-	elseif AimKey then
-		local keyEnum = Enum.KeyCode[AimKey]
-		if keyEnum then
-			return UserInputService:IsKeyDown(keyEnum)
-		end
-	end
-	return false
+    local AimKey = activatetoggle
+    if AimKey and AimKey:match("^MB%d") then
+        local buttonNum = tonumber(AimKey:match("%d"))
+        if buttonNum then
+            local isDown = UserInputService:IsMouseButtonPressed(Enum.UserInputType["MouseButton" .. buttonNum])
+            if isDown then
+                print("[SilentAim] Aim key down: " .. AimKey)
+            end
+            return isDown
+        end
+    elseif AimKey then
+        local keyEnum = Enum.KeyCode[AimKey]
+        if keyEnum then
+            local isDown = UserInputService:IsKeyDown(keyEnum)
+            if isDown then
+                print("[SilentAim] Aim key down: " .. AimKey)
+            end
+            return isDown
+        end
+    end
+    return false
 end
 
 local function UpdateFOVCircle()
