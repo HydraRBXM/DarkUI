@@ -6,7 +6,7 @@ local UserInputService = game:GetService("UserInputService")
 local Player = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 
-local silentshared = shared.SilentAim
+local silentshared = shared.Silentaim
 
 -- ─── state ────────────────────────────────────────────────────────────────────
 local isAiming        = false
