@@ -8,7 +8,7 @@ local camera = workspace.CurrentCamera
 
 local targetPlayer = nil
 local sharedsilent = shared.Silentaim
-print("cumshot was here <3")
+print("iwannabeloved")
 local accuracy = 100
 local bodyshotchance = 98
 local headshotchance = 67
