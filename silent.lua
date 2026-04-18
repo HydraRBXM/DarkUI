@@ -10,7 +10,6 @@ local camera = workspace.CurrentCamera
 
 local targetPlayer = nil
 local isLeftMouseDown = false
-local isRightMouseDown = false
 local autoClickConnection = nil
 
 local sharedsilent = shared.Silentaim
@@ -222,7 +221,7 @@ local function autoClick()
 		autoClickConnection:Disconnect()
 	end
 	autoClickConnection = RunService.Heartbeat:Connect(function()
-		if isLeftMouseDown or isRightMouseDown then
+		if isLeftMouseDown then
 			if not isLobbyVisible() then
 				mouse1click()
 			end
@@ -231,6 +230,21 @@ local function autoClick()
 		end
 	end)
 end
+
+UserInputService.InputBegan:Connect(function(input, isProcessed)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 and not isProcessed then
+		if not isLeftMouseDown then
+			isLeftMouseDown = true
+			autoClick()
+		end
+	end
+end)
+
+UserInputService.InputEnded:Connect(function(input, isProcessed)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 and not isProcessed then
+		isLeftMouseDown = false
+	end
+end)
 
 local function UpdateFOVCircle()
 	local fovCircle = Circlefov
