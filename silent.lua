@@ -222,7 +222,9 @@ local function autoClick()
 	autoClickConnection = RunService.Heartbeat:Connect(function()
 		if isLeftMouseDown then
 			if not isLobbyVisible() then
-				mouse1click()
+				mouse1press()
+				task.wait()
+				mouse1release()
 			end
 		else
 			autoClickConnection:Disconnect()
