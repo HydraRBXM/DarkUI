@@ -1,22 +1,20 @@
 -- Due to the way I manipulate the camera, it is necessary to implement the shooting mechanics in this specific manner.
 -- WORKS ON ALL EXECUTORS
-print("vber1")
+
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 
 local localPlayer = Players.LocalPlayer
 local camera = workspace.CurrentCamera
+
 local targetPlayer = nil
-local isLeftMouseDown = false
-local autoClickConnection = nil
 
 local sharedsilent = shared.Silentaim
 
 local FOVsize = 80
 local ShowFov = true
 local active = false
-local accuracy = 67
 local legit = false
 local wallcheck = false
 local teamcheck = false
@@ -25,8 +23,6 @@ local target_priority = "Closest"
 local target_body_part = "UpperTorso"
 local activatetoggle = "MB2"
 local mode = "Hold"
-local headshotchance = 55
-local bodyshotchance = 55
 local highlight_target = false
 
 local fovCirclePos = nil
@@ -42,7 +38,6 @@ local lastTarget = nil
 local function updatesilentvalues()
 	pcall(function()
 		active = sharedsilent.sActive.Value
-		accuracy = sharedsilent.sHitChance.Value
 		legit = sharedsilent.sLegit.Value
 		wallcheck = sharedsilent.sWallCheck.Value
 		teamcheck = sharedsilent.sTeamCheck.Value
@@ -51,8 +46,6 @@ local function updatesilentvalues()
 		target_body_part = sharedsilent.sTargetBodyPart.Value
 		activatetoggle = sharedsilent.sSilentAimKey.Value
 		mode = sharedsilent.sMode
-		headshotchance = sharedsilent.sHeadshotChance.Value
-		bodyshotchance = sharedsilent.sBodyShotChance.Value
 		ShowFov = sharedsilent.sShowfov.Value
 		FOVsize = sharedsilent.sFov.Value
 		highlight_target = sharedsilent.sShowTarget.Value
@@ -195,15 +188,7 @@ local function lockCameraToHead()
 	if not targetPlayer or not targetPlayer.Character then return end
 
 	local character = targetPlayer.Character
-	local partName = target_body_part
-	local roll = math.random(1, 100)
-	if roll <= headshotchance then
-		partName = "Head"
-	elseif roll <= headshotchance + bodyshotchance then
-		partName = "UpperTorso"
-	end
-
-	local part = character:FindFirstChild(partName)
+	local part = character:FindFirstChild(target_body_part)
 		or character:FindFirstChild("UpperTorso")
 		or character:FindFirstChild("HumanoidRootPart")
 
@@ -214,38 +199,6 @@ local function lockCameraToHead()
 		camera.CFrame = CFrame.new(camera.CFrame.Position, part.Position)
 	end
 end
-
-local function autoClick()
-	if autoClickConnection then
-		autoClickConnection:Disconnect()
-	end
-	autoClickConnection = RunService.Heartbeat:Connect(function()
-		if isRightMouseDown then
-			if not isLobbyVisible() then
-				mouse2press()
-				task.wait()
-				mouse2release()
-			end
-		else
-			autoClickConnection:Disconnect()
-		end
-	end)
-end
-
-UserInputService.InputBegan:Connect(function(input, isProcessed)
-	if input.UserInputType == Enum.UserInputType.MouseButton2 and not isProcessed then
-		if not isRightMouseDown then
-			isRightMouseDown = true
-			autoClick()
-		end
-	end
-end)
-
-UserInputService.InputEnded:Connect(function(input, isProcessed)
-	if input.UserInputType == Enum.UserInputType.MouseButton2 and not isProcessed then
-		isRightMouseDown = false
-	end
-end)
 
 local function UpdateFOVCircle()
 	local fovCircle = Circlefov
