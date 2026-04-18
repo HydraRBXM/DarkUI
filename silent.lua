@@ -9,7 +9,6 @@ local localPlayer = Players.LocalPlayer
 local camera = workspace.CurrentCamera
 
 local targetPlayer = nil
-local ClickInterval = 0.10
 local isLeftMouseDown = false
 local isRightMouseDown = false
 local autoClickConnection = nil
@@ -35,13 +34,8 @@ local highlight_target = false
 local fovCirclePos = nil
 local Circlefov = sharedsilent.sfovCircle
 
-local whitelistedparts = {'Head', 'UpperTorso', 'LowerTorso', 'LeftUpperArm', 'RightUpperArm'}
-local whitelistedbuttons = {'MB2', 'MB1'}
-
--- highlight cache
 local highlightCache = {}
 
--- change detection
 local lastAimActive = nil
 local lastActive = nil
 local lastIsLobby = nil
@@ -76,7 +70,6 @@ local function isLobbyVisible()
 end
 
 local function updateHighlight()
-	-- clean up highlights for players no longer targeted
 	for player, highlight in pairs(highlightCache) do
 		if player ~= targetPlayer then
 			highlight:Destroy()
@@ -171,11 +164,6 @@ local function Getplayerinfov()
 			end
 		end
 
-		if math.random(1, 100) > accuracy then
-			skippedCount += 1
-			continue
-		end
-
 		local score
 		if target_priority == "Closest To Crosshair" or target_priority == "Closest" then
 			score = distToCrosshair
@@ -197,7 +185,6 @@ local function Getplayerinfov()
 		end
 	end
 
-	-- only print when target changes
 	if target ~= lastTarget then
 		print("[SilentAim] Target changed: " .. (target and target.Name or "nil") .. " | Checked: " .. checkedCount .. " | Skipped: " .. skippedCount)
 		lastTarget = target
@@ -207,7 +194,6 @@ local function Getplayerinfov()
 end
 
 local function lockCameraToHead()
-	print("locking on.")
 	if not targetPlayer or not targetPlayer.Character then return end
 
 	local character = targetPlayer.Character
@@ -227,12 +213,10 @@ local function lockCameraToHead()
 
 	local screenPos = camera:WorldToViewportPoint(part.Position)
 	if screenPos.Z > 0 then
-		local cameraPosition = camera.CFrame.Position
-		camera.CFrame = CFrame.new(cameraPosition, part.Position)
+		camera.CFrame = CFrame.new(camera.CFrame.Position, part.Position)
 	end
 end
 
--- autoclick (not used, kept for reference)
 local function autoClick()
 	if autoClickConnection then
 		autoClickConnection:Disconnect()
@@ -277,9 +261,8 @@ local function loop()
 	UpdateFOVCircle()
 
 	local islobby = isLobbyVisible()
-	local aimActive = sharedsilent.sAimActive -- linoria GetState() handles hold/toggle/always
+	local aimActive = sharedsilent.sAimActive
 
-	-- only print on state changes
 	if aimActive ~= lastAimActive then
 		print("[SilentAim] Aim state: " .. tostring(aimActive) .. " | mode: " .. tostring(mode))
 		lastAimActive = aimActive
@@ -297,7 +280,6 @@ local function loop()
 
 	if not islobby and active and aimActive then
 		targetPlayer = Getplayerinfov()
-		print("using targesdast")
 		if targetPlayer then
 			lockCameraToHead()
 		end
