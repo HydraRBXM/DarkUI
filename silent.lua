@@ -281,6 +281,7 @@ local function loop()
         wasAimKeyDown = isaimkeydown
     elseif mode == "Hold" then
         toggleState = isaimkeydown
+		print("togglestat ON!!!")
     elseif mode == "Always" then
         toggleState = true
     end
