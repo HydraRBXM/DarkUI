@@ -5,7 +5,7 @@ local UserInputService = game:GetService("UserInputService")
 
 local localPlayer = Players.LocalPlayer
 local camera = workspace.CurrentCamera
-
+print("fart")
 local targetPlayer = nil
 local isShooting = false
 
@@ -39,6 +39,9 @@ local lastActive = nil
 local lastIsLobby = nil
 local lastTarget = nil
 
+local toggleState = false
+local lastKeyState = false
+
 local HRP_EXPANDED_SIZE = Vector3.new(6, 6, 6)
 
 local function updatesilentvalues()
@@ -67,6 +70,42 @@ end
 
 local function isLobbyVisible()
 	return localPlayer.PlayerGui.MainGui.MainFrame.Lobby.Currency.Visible == true
+end
+
+local function isAimKeyDown()
+	if not activatetoggle then return false end
+
+	if activatetoggle:match("^MB%d") then
+		local buttonNum = tonumber(activatetoggle:match("%d"))
+		if buttonNum then
+			return UserInputService:IsMouseButtonPressed(Enum.UserInputType["MouseButton" .. buttonNum])
+		end
+	else
+		local keyEnum = Enum.KeyCode[activatetoggle]
+		if keyEnum then
+			return UserInputService:IsKeyDown(keyEnum)
+		end
+	end
+
+	return false
+end
+
+local function isAimActive()
+	local keyDown = isAimKeyDown()
+
+	if mode == "Hold" then
+		return keyDown
+	elseif mode == "Toggle" then
+		if keyDown and not lastKeyState then
+			toggleState = not toggleState
+		end
+		lastKeyState = keyDown
+		return toggleState
+	elseif mode == "Always" then
+		return true
+	end
+
+	return false
 end
 
 local function expandHitbox(character)
@@ -196,7 +235,7 @@ end
 -- Util hooks
 local origRaycast = util.Raycast
 util.Raycast = function(self, origin, direction, dist, ...)
-	if active and not isLobbyVisible() then
+	if active and not isLobbyVisible() and isAimActive() then
 		local myRoot = localPlayer.Character and localPlayer.Character:FindFirstChild("HumanoidRootPart")
 		local head = getTarget(myRoot and myRoot.Position or origin)
 
@@ -205,7 +244,8 @@ util.Raycast = function(self, origin, direction, dist, ...)
 			local velocity = rootPart and rootPart.AssemblyLinearVelocity or Vector3.zero
 			local pingSeconds = localPlayer:GetNetworkPing()
 			local predictedPos = head.Position + (velocity * pingSeconds)
-			return origRaycast(self, origin, predictedPos - origin, dist, ...)
+			local newDir = predictedPos - origin
+			return origRaycast(self, origin, newDir, dist, ...)
 		end
 	end
 	return origRaycast(self, origin, direction, dist, ...)
@@ -226,10 +266,10 @@ RunService:BindToRenderStep("SilentAim", Enum.RenderPriority.Camera.Value + 1, f
 	UpdateFOVCircle()
 
 	local islobby = isLobbyVisible()
-	local aimActive = sharedsilent.sAimActive
+	local aimActive = isAimActive()
 
 	if aimActive ~= lastAimActive then
-		print("[SilentAim] Aim state: " .. tostring(aimActive) .. " | mode: " .. tostring(mode))
+		print("[SilentAim] Aim state: " .. tostring(aimActive))
 		lastAimActive = aimActive
 	end
 
@@ -245,7 +285,7 @@ RunService:BindToRenderStep("SilentAim", Enum.RenderPriority.Camera.Value + 1, f
 
 	if not islobby and active and aimActive then
 		local myRoot = localPlayer.Character and localPlayer.Character:FindFirstChild("HumanoidRootPart")
-		local head = getTarget(myRoot and myRoot.Position or camera.CFrame.Position)
+		getTarget(myRoot and myRoot.Position or camera.CFrame.Position)
 
 		if targetPlayer and targetPlayer.Character then
 			expandHitbox(targetPlayer.Character)
@@ -254,6 +294,7 @@ RunService:BindToRenderStep("SilentAim", Enum.RenderPriority.Camera.Value + 1, f
 		end
 	else
 		targetPlayer = nil
+		toggleState = false
 		restoreAllHitboxes()
 	end
 
