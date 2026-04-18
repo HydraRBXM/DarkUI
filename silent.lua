@@ -9,6 +9,9 @@ local localPlayer = Players.LocalPlayer
 local camera = workspace.CurrentCamera
 
 local targetPlayer = nil
+local isLeftMouseDown = false
+local isRightMouseDown = false
+local autoClickConnection = nil
 
 local sharedsilent = shared.Silentaim
 
@@ -199,6 +202,43 @@ local function lockCameraToHead()
 		camera.CFrame = CFrame.new(camera.CFrame.Position, part.Position)
 	end
 end
+
+local function autoClick()
+	if autoClickConnection then
+		autoClickConnection:Disconnect()
+	end
+	autoClickConnection = RunService.Heartbeat:Connect(function()
+		if isLeftMouseDown or isRightMouseDown then
+			if not isLobbyVisible() then
+				mouse1click()
+			end
+		else
+			autoClickConnection:Disconnect()
+		end
+	end)
+end
+
+UserInputService.InputBegan:Connect(function(input, isProcessed)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 and not isProcessed then
+		if not isLeftMouseDown then
+			isLeftMouseDown = true
+			autoClick()
+		end
+	elseif input.UserInputType == Enum.UserInputType.MouseButton2 and not isProcessed then
+		if not isRightMouseDown then
+			isRightMouseDown = true
+			autoClick()
+		end
+	end
+end)
+
+UserInputService.InputEnded:Connect(function(input, isProcessed)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 and not isProcessed then
+		isLeftMouseDown = false
+	elseif input.UserInputType == Enum.UserInputType.MouseButton2 and not isProcessed then
+		isRightMouseDown = false
+	end
+end)
 
 local function UpdateFOVCircle()
 	local fovCircle = Circlefov
