@@ -207,6 +207,7 @@ local function Getplayerinfov()
 end
 
 local function lockCameraToHead()
+	print("locking on.")
 	if not targetPlayer or not targetPlayer.Character then return end
 
 	local character = targetPlayer.Character
@@ -296,6 +297,7 @@ local function loop()
 
 	if not islobby and active and aimActive then
 		targetPlayer = Getplayerinfov()
+		print("using targesdast")
 		if targetPlayer then
 			lockCameraToHead()
 		end
