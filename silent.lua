@@ -15,6 +15,10 @@ local autoClickConnection = nil
 
 local sharedsilent = shared.Silentaim
 
+local accuracy = 100
+local bodyshotchance = 98
+local headshotchance = 67
+
 local FOVsize = 80
 local ShowFov = true
 local active = false
@@ -32,11 +36,16 @@ local fovCirclePos = nil
 local Circlefov = sharedsilent.sfovCircle
 
 local highlightCache = {}
+local hrpSizeCache = {} -- store original HRP sizes
 
 local lastAimActive = nil
 local lastActive = nil
 local lastIsLobby = nil
 local lastTarget = nil
+
+local isShooting = false
+
+local HRP_EXPANDED_SIZE = Vector3.new(6, 6, 6) -- expanded hitbox size, tweak as needed
 
 local function updatesilentvalues()
 	pcall(function()
@@ -52,6 +61,9 @@ local function updatesilentvalues()
 		ShowFov = sharedsilent.sShowfov.Value
 		FOVsize = sharedsilent.sFov.Value
 		highlight_target = sharedsilent.sShowTarget.Value
+		accuracy = sharedsilent.sHitChance.Value
+		bodyshotchance = sharedsilent.sBodyShotChance.Value
+		headshotchance = sharedsilent.sHeadshotChance.Value
 
 		if ShowFov then
 			Circlefov.Visible = ShowFov
@@ -61,6 +73,41 @@ end
 
 local function isLobbyVisible()
 	return localPlayer.PlayerGui.MainGui.MainFrame.Lobby.Currency.Visible == true
+end
+
+-- expand HRP of a character, cache original size
+local function expandHitbox(character)
+	if not character then return end
+	local hrp = character:FindFirstChild("HumanoidRootPart")
+	if not hrp then return end
+
+	if not hrpSizeCache[character] then
+		hrpSizeCache[character] = hrp.Size
+		hrp.Size = HRP_EXPANDED_SIZE
+	end
+end
+
+-- restore HRP to original size
+local function restoreHitbox(character)
+	if not character then return end
+	local hrp = character:FindFirstChild("HumanoidRootPart")
+	if not hrp then return end
+
+	if hrpSizeCache[character] then
+		hrp.Size = hrpSizeCache[character]
+		hrpSizeCache[character] = nil
+	end
+end
+
+-- restore all hitboxes (called when aim is off or no target)
+local function restoreAllHitboxes()
+	for character, originalSize in pairs(hrpSizeCache) do
+		local hrp = character:FindFirstChild("HumanoidRootPart")
+		if hrp then
+			hrp.Size = originalSize
+		end
+		hrpSizeCache[character] = nil
+	end
 end
 
 local function updateHighlight()
@@ -187,59 +234,84 @@ local function Getplayerinfov()
 	return target
 end
 
-local function lockCameraToHead()
-	if not targetPlayer or not targetPlayer.Character then return end
+local function getTargetPart(character)
+	local roll = math.random(1, 100)
+	local partName
 
-	local character = targetPlayer.Character
-	local part = character:FindFirstChild(target_body_part)
+	if roll <= headshotchance then
+		partName = "Head"
+	elseif roll <= headshotchance + bodyshotchance then
+		partName = "UpperTorso"
+	else
+		partName = target_body_part
+	end
+
+	return character:FindFirstChild(partName)
 		or character:FindFirstChild("UpperTorso")
 		or character:FindFirstChild("HumanoidRootPart")
-
-	if not part then return end
-
-	local screenPos = camera:WorldToViewportPoint(part.Position)
-	if screenPos.Z > 0 then
-		camera.CFrame = CFrame.new(camera.CFrame.Position, part.Position)
-	end
 end
 
+local function lockCameraToHead()
+	if not targetPlayer or not targetPlayer.Character then return end
+	if math.random(1, 100) > accuracy then return end
+
+	local character = targetPlayer.Character
+	local part = getTargetPart(character)
+	if not part then return end
+
+	-- predict position based on velocity + ping
+	local rootPart = character:FindFirstChild("HumanoidRootPart")
+	local velocity = rootPart and rootPart.AssemblyLinearVelocity or Vector3.zero
+	local pingSeconds = localPlayer:GetNetworkPing()
+	local predictedPosition = part.Position + (velocity * pingSeconds)
+
+	local screenPos = camera:WorldToViewportPoint(predictedPosition)
+	if screenPos.Z > 0 then
+		local targetCFrame = CFrame.new(camera.CFrame.Position, predictedPosition)
+		camera.CFrame = camera.CFrame:Lerp(targetCFrame, 0.85)
+	end
+end
+--[[
 local function autoClick()
-    if autoClickConnection then
-        autoClickConnection:Disconnect()
-    end
-    autoClickConnection = RunService.Heartbeat:Connect(function()
-        if isLeftMouseDown or isRightMouseDown then
-            if not isLobbyVisible() then
-                mouse1click()
-            end
-        else
-            autoClickConnection:Disconnect()
-        end
-    end)
+	if autoClickConnection then
+		autoClickConnection:Disconnect()
+	end
+	autoClickConnection = RunService.Heartbeat:Connect(function()
+		if isLeftMouseDown or isRightMouseDown then
+			if not isLobbyVisible() then
+				mouse1click()
+			end
+		else
+			autoClickConnection:Disconnect()
+		end
+	end)
 end
 
 UserInputService.InputBegan:Connect(function(input, isProcessed)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 and not isProcessed then
-        if not isLeftMouseDown then
-            isLeftMouseDown = true
-            autoClick()
-        end
-    elseif input.UserInputType == Enum.UserInputType.MouseButton2 and not isProcessed then
-        if not isRightMouseDown then
-            isRightMouseDown = true
-            autoClick()
-        end
-    end
+	if input.UserInputType == Enum.UserInputType.MouseButton1 and not isProcessed then
+		if not isLeftMouseDown then
+			isLeftMouseDown = true
+			isShooting = true
+			autoClick()
+		end
+	elseif input.UserInputType == Enum.UserInputType.MouseButton2 and not isProcessed then
+		if not isRightMouseDown then
+			isRightMouseDown = true
+			isShooting = true
+			autoClick()
+		end
+	end
 end)
 
 UserInputService.InputEnded:Connect(function(input, isProcessed)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 and not isProcessed then
-        isLeftMouseDown = false
-    elseif input.UserInputType == Enum.UserInputType.MouseButton2 and not isProcessed then
-        isRightMouseDown = false
-    end
-end)
-
+	if input.UserInputType == Enum.UserInputType.MouseButton1 and not isProcessed then
+		isLeftMouseDown = false
+		if not isRightMouseDown then isShooting = false end
+	elseif input.UserInputType == Enum.UserInputType.MouseButton2 and not isProcessed then
+		isRightMouseDown = false
+		if not isLeftMouseDown then isShooting = false end
+	end
+end)]]
 
 local function UpdateFOVCircle()
 	local fovCircle = Circlefov
@@ -265,7 +337,7 @@ local function UpdateFOVCircle()
 	end)
 end
 
-local function loop()
+RunService:BindToRenderStep("SilentAim", Enum.RenderPriority.Camera.Value + 1, function()
 	updatesilentvalues()
 	UpdateFOVCircle()
 
@@ -289,16 +361,29 @@ local function loop()
 
 	if not islobby and active and aimActive then
 		targetPlayer = Getplayerinfov()
-		if targetPlayer then
-			lockCameraToHead()
+
+		if targetPlayer and targetPlayer.Character then
+			-- expand hitbox while targeting
+			expandHitbox(targetPlayer.Character)
+
+			if isShooting then
+				lockCameraToHead()
+			end
+		else
+			-- no target, restore all hitboxes
+			restoreAllHitboxes()
 		end
 	else
 		targetPlayer = nil
+		restoreAllHitboxes()
 	end
 
 	updateHighlight()
-end
+end)
 
-RunService.Heartbeat:Connect(function()
-	loop()
+-- clean up hitboxes if character is removed mid game
+Players.PlayerRemoving:Connect(function(player)
+	if player.Character then
+		restoreHitbox(player.Character)
+	end
 end)
