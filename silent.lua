@@ -1,6 +1,6 @@
 -- Due to the way I manipulate the camera, it is necessary to implement the shooting mechanics in this specific manner.
 -- WORKS ON ALL EXECUTORS
-print("heyo")
+print("BRO AHHH")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
