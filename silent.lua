@@ -5,9 +5,8 @@ local UserInputService = game:GetService("UserInputService")
 
 local localPlayer = Players.LocalPlayer
 local camera = workspace.CurrentCamera
-print("fart")
+
 local targetPlayer = nil
-local isShooting = false
 
 local sharedsilent = shared.Silentaim
 
@@ -232,19 +231,17 @@ local function UpdateFOVCircle()
 	end)
 end
 
--- Util hooks
 local origRaycast = util.Raycast
 util.Raycast = function(self, origin, direction, dist, ...)
 	if active and not isLobbyVisible() and isAimActive() then
-		local myRoot = localPlayer.Character and localPlayer.Character:FindFirstChild("HumanoidRootPart")
-		local head = getTarget(myRoot and myRoot.Position or origin)
+		local head = getTarget(origin)
 
 		if head and math.random(1, 100) <= accuracy then
 			local rootPart = head.Parent:FindFirstChild("HumanoidRootPart")
 			local velocity = rootPart and rootPart.AssemblyLinearVelocity or Vector3.zero
 			local pingSeconds = localPlayer:GetNetworkPing()
 			local predictedPos = head.Position + (velocity * pingSeconds)
-			local newDir = predictedPos - origin
+			local newDir = (predictedPos - origin).Unit * dist
 			return origRaycast(self, origin, newDir, dist, ...)
 		end
 	end
@@ -260,7 +257,6 @@ util.PlayParticles = function(self, obj)
 	return origParticles(self, obj)
 end
 
--- Main loop
 RunService:BindToRenderStep("SilentAim", Enum.RenderPriority.Camera.Value + 1, function()
 	updatesilentvalues()
 	UpdateFOVCircle()
