@@ -2,7 +2,7 @@ local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local util = require(game:GetService("ReplicatedStorage").Modules.Utility)
-
+print("uwu client")
 local localPlayer = Players.LocalPlayer
 local camera = workspace.CurrentCamera
 
