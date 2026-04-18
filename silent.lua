@@ -1,4 +1,6 @@
 -- SILENT AIM v1 by oblivion (completed)
+-- method: camera CFrame manipulation — no hooks, no mouse movement
+
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -6,44 +8,41 @@ local UserInputService = game:GetService("UserInputService")
 local Player = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 
-local silentshared = shared.Silentaim
+local silentshared = shared.SilentAim
 
 -- ─── state ────────────────────────────────────────────────────────────────────
-local isAiming        = false
-local currentTarget   = nil
-local lockedTarget    = nil
-local lockedAimPart   = nil
-local cachedViewport  = Vector2.zero
+local isAiming         = false
+local lockedTarget     = nil
+local lockedAimPart    = nil
 local cachedCharacters = {}
-local lastCache       = 0
-local fovCirclePos    = nil
-local lastTime        = tick()
-local fovCircle       = nil
-local Mode            = nil
-local AimKey          = nil
+local lastCache        = 0
+local fovCirclePos     = nil
+local fovCircle        = nil
+local toggleState      = false
+local lastKeyState     = false
 
-local toggleState  = false
-local lastKeyState = false
-
--- ─── settings (pulled from silentshared each frame) ───────────────────────────
-local Active          = false
-local LegitMode       = false
-local TeamCheck       = false
-local WallCheck       = false
-local HitChance       = 95
-local HeadshotChance  = 68
-local BodyShotChance  = 92
-local Fov             = 90
-local MaxDistance     = 1000
-local TargetPriority  = "Closest"
-local Targetpart      = "Head"
+-- ─── settings ─────────────────────────────────────────────────────────────────
+local Active         = false
+local LegitMode      = false
+local TeamCheck      = false
+local WallCheck      = false
+local HitChance      = 95
+local HeadshotChance = 68
+local BodyShotChance = 92
+local Fov            = 90
+local MaxDistance    = 1000
+local TargetPriority = "Closest"
+local Targetpart     = "Head"
+local AimKey         = nil
+local Mode           = "Always"
 
 local targetHitChance = {}
 
 -- ═══════════════════════════════════════════
---  SHARED VALUE READER
+--  SHARED READERS
 -- ═══════════════════════════════════════════
 local function readBool(key, default)
+    if not silentshared then return default end
     local v = silentshared[key]
     if v == nil then return default end
     if type(v) == "boolean" then return v end
@@ -51,6 +50,7 @@ local function readBool(key, default)
     return default
 end
 local function readNum(key, default)
+    if not silentshared then return default end
     local v = silentshared[key]
     if v == nil then return default end
     if type(v) == "number" then return v end
@@ -58,6 +58,7 @@ local function readNum(key, default)
     return default
 end
 local function readStr(key, default)
+    if not silentshared then return default end
     local v = silentshared[key]
     if v == nil then return default end
     if type(v) == "string" then return v end
@@ -68,8 +69,7 @@ end
 local function UpdateSettings()
     if not silentshared then return end
     pcall(function()
-        fovCircle    = silentshared.fovCircle
-
+        fovCircle     = silentshared.fovCircle
         Active        = readBool("Active",        false)
         LegitMode     = readBool("LegitAim",      false)
         TeamCheck     = readBool("TeamCheck",     false)
@@ -103,7 +103,7 @@ local function isLobbyVisible()
 end
 
 -- ═══════════════════════════════════════════
---  TEAM CHECK
+--  CHECKS
 -- ═══════════════════════════════════════════
 local function SafeTeamCheck(plr)
     if not TeamCheck then return false end
@@ -111,9 +111,6 @@ local function SafeTeamCheck(plr)
     return plr.Team == Player.Team
 end
 
--- ═══════════════════════════════════════════
---  WALL CHECK
--- ═══════════════════════════════════════════
 local rayParams = RaycastParams.new()
 rayParams.FilterType  = Enum.RaycastFilterType.Exclude
 rayParams.IgnoreWater = true
@@ -124,31 +121,40 @@ local function IsVisible(targetPart)
     if not char then return true end
     rayParams.FilterDescendantsInstances = { char }
     local origin = Camera.CFrame.Position
-    local dir    = targetPart.Position - origin
-    local res    = workspace:Raycast(origin, dir, rayParams)
+    local res    = workspace:Raycast(origin, targetPart.Position - origin, rayParams)
     return not res or (res.Instance and res.Instance:IsDescendantOf(targetPart.Parent))
 end
 
--- ═══════════════════════════════════════════
---  DISTANCE CHECK
--- ═══════════════════════════════════════════
 local function IsInRange(part)
     if not part or not part.Parent then return false end
     return (part.Position - Camera.CFrame.Position).Magnitude <= MaxDistance
 end
 
 -- ═══════════════════════════════════════════
---  AIM PART CHOOSER
+--  FOV CHECK
+-- ═══════════════════════════════════════════
+local function InFov(worldPos)
+    local sp, onScreen = Camera:WorldToViewportPoint(worldPos)
+    if not onScreen or sp.Z <= 0 then return false, nil end
+    local sp2   = Vector2.new(sp.X, sp.Y)
+    local mouse = UserInputService:GetMouseLocation()
+    local radius= (Fov / 180) * (Camera.ViewportSize.Y / 2)
+    if (sp2 - mouse).Magnitude <= radius then
+        return true, sp2
+    end
+    return false, nil
+end
+
+-- ═══════════════════════════════════════════
+--  AIM PART + HIT CHANCE
 -- ═══════════════════════════════════════════
 local function ChooseAimPart(char)
     if not char then return nil end
-    local rollHead = math.random(100) <= HeadshotChance
-    if rollHead then
+    if math.random(100) <= HeadshotChance then
         local head = char:FindFirstChild("Head")
         if head then return head end
     end
-    local rollBody = math.random(100) <= BodyShotChance
-    if rollBody then
+    if math.random(100) <= BodyShotChance then
         return char:FindFirstChild(Targetpart)
             or char:FindFirstChild("UpperTorso")
             or char:FindFirstChild("Torso")
@@ -157,30 +163,12 @@ local function ChooseAimPart(char)
     return nil
 end
 
--- ═══════════════════════════════════════════
---  HIT CHANCE GATE
--- ═══════════════════════════════════════════
 local function ShouldHitTarget(char)
     if not char then return true end
     if targetHitChance[char] == nil then
         targetHitChance[char] = math.random(100) <= HitChance
     end
     return targetHitChance[char]
-end
-
--- ═══════════════════════════════════════════
---  FOV CHECK  (screen-space circle around mouse)
--- ═══════════════════════════════════════════
-local function InFov(worldPos)
-    local screenPos, onScreen = Camera:WorldToViewportPoint(worldPos)
-    if not onScreen or screenPos.Z <= 0 then return false, nil end
-    local sp2    = Vector2.new(screenPos.X, screenPos.Y)
-    local mouse  = UserInputService:GetMouseLocation()
-    local radius = (Fov / 180) * (Camera.ViewportSize.Y / 2)
-    if (sp2 - mouse).Magnitude <= radius then
-        return true, sp2
-    end
-    return false, nil
 end
 
 -- ═══════════════════════════════════════════
@@ -203,6 +191,7 @@ end
 --  TARGET FINDER
 -- ═══════════════════════════════════════════
 local function FindTarget()
+    -- keep locked target if still valid
     if lockedTarget and lockedTarget.Parent then
         local hum = lockedTarget:FindFirstChildWhichIsA("Humanoid")
         if hum and hum.Health > 0 then
@@ -210,14 +199,13 @@ local function FindTarget()
                 and lockedAimPart or ChooseAimPart(lockedTarget)
             if part and IsInRange(part) and IsVisible(part) then
                 local ok, scr = InFov(part.Position)
-                if ok then return part, scr end
+                if ok then return part end
             end
         end
     end
 
     lockedTarget  = nil
     lockedAimPart = nil
-
     RefreshCache()
 
     local screenCenter = Camera.ViewportSize * 0.5
@@ -248,7 +236,7 @@ local function FindTarget()
         })
     end
 
-    if #candidates == 0 then return nil, nil end
+    if #candidates == 0 then return nil end
 
     if TargetPriority == "Distance" then
         table.sort(candidates, function(a, b) return a.distance < b.distance end)
@@ -258,7 +246,7 @@ local function FindTarget()
         local pick = candidates[math.random(#candidates)]
         lockedTarget  = pick.char
         lockedAimPart = pick.part
-        return pick.part, pick.screenPos
+        return pick.part
     else
         table.sort(candidates, function(a, b)
             return (a.screenPos - screenCenter).Magnitude < (b.screenPos - screenCenter).Magnitude
@@ -268,41 +256,11 @@ local function FindTarget()
     local best = candidates[1]
     lockedTarget  = best.char
     lockedAimPart = best.part
-    return best.part, best.screenPos
+    return best.part
 end
 
 -- ═══════════════════════════════════════════
---  PLAYER IN FOV  (simple public helper)
--- ═══════════════════════════════════════════
-local function GetPlayerInFov()
-    local best     = nil
-    local bestDist = math.huge
-    local mouse    = UserInputService:GetMouseLocation()
-    local radius   = (Fov / 180) * (Camera.ViewportSize.Y / 2)
-
-    for _, player in ipairs(Players:GetPlayers()) do
-        if player == Player then continue end
-        if SafeTeamCheck(player) then continue end
-        local char = player.Character
-        if not char then continue end
-        local head = char:FindFirstChild("Head")
-        if not head then continue end
-
-        local sp, onScreen = Camera:WorldToViewportPoint(head.Position)
-        if not onScreen or sp.Z <= 0 then continue end
-
-        local dist = (Vector2.new(sp.X, sp.Y) - mouse).Magnitude
-        if dist <= radius and dist < bestDist then
-            bestDist = dist
-            best     = player
-        end
-    end
-
-    return best
-end
-
--- ═══════════════════════════════════════════
---  AIM KEY CHECK
+--  AIM KEY
 -- ═══════════════════════════════════════════
 local function IsAimKeyDown()
     if not AimKey then return false end
@@ -325,8 +283,8 @@ local function UpdateFOVCircle()
     end
     if not fovCircle then return end
 
-    local showFov     = silentshared and readBool("Showfov", false)
-    local aimActive   = silentshared and readBool("Active",  false)
+    local showFov   = readBool("Showfov", false)
+    local aimActive = readBool("Active",  false)
 
     if not showFov or not aimActive then
         pcall(function() fovCircle.Visible = false end)
@@ -335,7 +293,6 @@ local function UpdateFOVCircle()
 
     local mouse  = UserInputService:GetMouseLocation()
     local radius = (Fov / 180) * (Camera.ViewportSize.Y / 2)
-
     fovCirclePos = fovCirclePos and fovCirclePos:Lerp(mouse, 0.28) or mouse
 
     pcall(function()
@@ -346,12 +303,39 @@ local function UpdateFOVCircle()
 end
 
 -- ═══════════════════════════════════════════
+--  CAMERA REDIRECT  (the actual silent aim)
+--  Rotates camera to face the target for one
+--  frame so the game's raycast picks it up,
+--  then restores on the next frame naturally.
+-- ═══════════════════════════════════════════
+local savedCFrame = nil
+
+local function ApplySilentAim(targetPart)
+    if not targetPart or not targetPart.Parent then return end
+
+    local head = targetPart
+    local headPos, inFront = Camera:WorldToViewportPoint(head.Position)
+    if not inFront or headPos.Z <= 0 then return end
+
+    local camPos = Camera.CFrame.Position
+    -- point camera directly at target
+    savedCFrame  = Camera.CFrame
+    Camera.CFrame = CFrame.new(camPos, head.Position)
+end
+
+local function RestoreCamera()
+    -- camera restores itself every frame via Roblox's camera controller
+    -- we only need to clear our saved ref
+    savedCFrame = nil
+end
+
+-- ═══════════════════════════════════════════
 --  SHOW TARGET HIGHLIGHT
 -- ═══════════════════════════════════════════
-local function UpdateTargetHighlight()
+local function UpdateTargetHighlight(part)
     if not silentshared then return end
-    local showTarget = readBool("ShowTarget", false)
-    local ok, _ = pcall(function()
+    pcall(function()
+        local showTarget = readBool("ShowTarget", false)
         silentshared._lockedChar = (showTarget and lockedTarget) or nil
     end)
 end
@@ -360,60 +344,44 @@ end
 --  MAIN LOOP
 -- ═══════════════════════════════════════════
 local function MainLoop()
-    cachedViewport = Camera.ViewportSize
-
     UpdateSettings()
 
     local keyDown = IsAimKeyDown()
     if Mode == "Hold" then
         isAiming = Active and keyDown
     elseif Mode == "Toggle" then
-        if keyDown and not lastKeyState then
-            toggleState = not toggleState
-        end
+        if keyDown and not lastKeyState then toggleState = not toggleState end
         lastKeyState = keyDown
         isAiming = Active and toggleState
-    else 
+    else -- Always
         isAiming = Active
     end
 
-    if isLobbyVisible() then
-        isAiming = false
-    end
+    if isLobbyVisible() then isAiming = false end
 
     if not isAiming then
-        currentTarget = nil
         table.clear(targetHitChance)
         lockedTarget  = nil
         lockedAimPart = nil
-        UpdateTargetHighlight()
+        UpdateTargetHighlight(nil)
         return
     end
 
-    local part, _ = FindTarget()
-    currentTarget  = part
-    UpdateTargetHighlight()
+    local part = FindTarget()
+    UpdateTargetHighlight(part)
+
+    if part then
+        ApplySilentAim(part)
+    end
 end
 
--- ═══════════════════════════════════════════
---  SILENT AIM HOOK
---  Intercepts camera:ScreenPointToRay / WorldToScreenPoint
---  so the bullet redirect happens without touching the mouse.
---  Works by hooking workspace.CurrentCamera via __index override
---  on the firing function's ray origin — standard silent aim pattern.
--- ═══════════════════════════════════════════
-local oldNamecall
-oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
-    local method = getnamecallmethod()
-    if self == Camera and (method == "ScreenPointToRay" or method == "ViewportPointToRay") then
-        if currentTarget and currentTarget.Parent then
-            local pos = currentTarget.Position
-            local origin = Camera.CFrame.Position
-            local dir    = (pos - origin).Unit * 5000
-            return Ray.new(origin, dir)
-        end
-    end
-    return oldNamecall(self, ...)
+-- RenderStepped: restore camera AFTER the game has read our redirected CFrame
+-- so the bullet fires toward the target, then camera snaps back instantly
+RunService.RenderStepped:Connect(function()
+    UpdateFOVCircle()
+    -- camera is restored automatically by Roblox's camera system each frame
+    -- nothing needed here unless you want explicit restore:
+    -- RestoreCamera()
 end)
 
 -- ═══════════════════════════════════════════
@@ -422,9 +390,6 @@ end)
 task.delay(1, function()
     print("SILENT AIM v1 Loaded!")
     fovCircle = silentshared and silentshared.fovCircle or nil
-
-    RunService.RenderStepped:Connect(UpdateFOVCircle)
     RunService.Heartbeat:Connect(MainLoop)
-
     print("SILENT AIM v1 Ready!")
 end)
