@@ -1,6 +1,6 @@
 -- Due to the way I manipulate the camera, it is necessary to implement the shooting mechanics in this specific manner.
 -- WORKS ON ALL EXECUTORS
-
+print("heyo")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -267,9 +267,9 @@ local wasAimKeyDown = false
 
 local function loop()
 	task.spawn(function()
-			 UpdateFOVCircle() -- this one is fine to keep or remove task.spawn, doesnt matter
+	 UpdateFOVCircle() -- this one is fine to keep or remove task.spawn, doesnt matter
+	 updatesilentvalues() -- sync, no task.spawn
 	)
-    updatesilentvalues() -- sync, no task.spawn
 
     local isaimkeydown = IsAimKeyDown()
     local islobby = isLobbyVisible()
