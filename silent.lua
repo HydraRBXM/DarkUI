@@ -204,41 +204,42 @@ local function lockCameraToHead()
 end
 
 local function autoClick()
-	if autoClickConnection then
-		autoClickConnection:Disconnect()
-	end
-	autoClickConnection = RunService.Heartbeat:Connect(function()
-		if isLeftMouseDown or isRightMouseDown then
-			if not isLobbyVisible() then
-				mouse1click()
-			end
-		else
-			autoClickConnection:Disconnect()
-		end
-	end)
+    if autoClickConnection then
+        autoClickConnection:Disconnect()
+    end
+    autoClickConnection = RunService.Heartbeat:Connect(function()
+        if isLeftMouseDown or isRightMouseDown then
+            if not isLobbyVisible() then
+                mouse1click()
+            end
+        else
+            autoClickConnection:Disconnect()
+        end
+    end)
 end
 
 UserInputService.InputBegan:Connect(function(input, isProcessed)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 and not isProcessed then
-		if not isLeftMouseDown then
-			isLeftMouseDown = true
-			autoClick()
-		end
-	elseif input.UserInputType == Enum.UserInputType.MouseButton2 and not isProcessed then
-		if not isRightMouseDown then
-			isRightMouseDown = true
-			autoClick()
-		end
-	end
+    if input.UserInputType == Enum.UserInputType.MouseButton1 and not isProcessed then
+        if not isLeftMouseDown then
+            isLeftMouseDown = true
+            autoClick()
+        end
+    elseif input.UserInputType == Enum.UserInputType.MouseButton2 and not isProcessed then
+        if not isRightMouseDown then
+            isRightMouseDown = true
+            autoClick()
+        end
+    end
 end)
 
 UserInputService.InputEnded:Connect(function(input, isProcessed)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 and not isProcessed then
-		isLeftMouseDown = false
-	elseif input.UserInputType == Enum.UserInputType.MouseButton2 and not isProcessed then
-		isRightMouseDown = false
-	end
+    if input.UserInputType == Enum.UserInputType.MouseButton1 and not isProcessed then
+        isLeftMouseDown = false
+    elseif input.UserInputType == Enum.UserInputType.MouseButton2 and not isProcessed then
+        isRightMouseDown = false
+    end
 end)
+
 
 local function UpdateFOVCircle()
 	local fovCircle = Circlefov
