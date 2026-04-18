@@ -1,18 +1,15 @@
--- Due to the way I manipulate the camera, it is necessary to implement the shooting mechanics in this specific manner.
--- WORKS ON ALL EXECUTORS
-
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
-local VirtualInputManager = game:GetService("VirtualInputManager")
+local util = require(game:GetService("ReplicatedStorage").Modules.Utility)
 
 local localPlayer = Players.LocalPlayer
 local camera = workspace.CurrentCamera
-local Center = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y / 2)
 
 local targetPlayer = nil
 local isLeftMouseDown = false
 local isRightMouseDown = false
+local autoClickConnection = nil
 
 local sharedsilent = shared.Silentaim
 
@@ -28,7 +25,7 @@ local wallcheck = false
 local teamcheck = false
 local distance = 100
 local target_priority = "Closest"
-local target_body_part = "HitboxHead" -- rivals custom hitbox
+local target_body_part = "UpperTorso"
 local activatetoggle = "MB2"
 local mode = "Hold"
 local highlight_target = false
@@ -37,16 +34,16 @@ local fovCirclePos = nil
 local Circlefov = sharedsilent.sfovCircle
 
 local highlightCache = {}
+local hrpSizeCache = {}
 
 local lastAimActive = nil
 local lastActive = nil
 local lastIsLobby = nil
 local lastTarget = nil
 
--- update center on viewport change
-RunService.RenderStepped:Connect(function()
-	Center = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y / 2)
-end)
+local isShooting = false
+
+local HRP_EXPANDED_SIZE = Vector3.new(6, 6, 6)
 
 local function updatesilentvalues()
 	pcall(function()
@@ -76,6 +73,36 @@ local function isLobbyVisible()
 	return localPlayer.PlayerGui.MainGui.MainFrame.Lobby.Currency.Visible == true
 end
 
+local function expandHitbox(character)
+	if not character then return end
+	local hrp = character:FindFirstChild("HumanoidRootPart")
+	if not hrp then return end
+	if not hrpSizeCache[character] then
+		hrpSizeCache[character] = hrp.Size
+		hrp.Size = HRP_EXPANDED_SIZE
+	end
+end
+
+local function restoreHitbox(character)
+	if not character then return end
+	local hrp = character:FindFirstChild("HumanoidRootPart")
+	if not hrp then return end
+	if hrpSizeCache[character] then
+		hrp.Size = hrpSizeCache[character]
+		hrpSizeCache[character] = nil
+	end
+end
+
+local function restoreAllHitboxes()
+	for character, originalSize in pairs(hrpSizeCache) do
+		local hrp = character:FindFirstChild("HumanoidRootPart")
+		if hrp then
+			hrp.Size = originalSize
+		end
+		hrpSizeCache[character] = nil
+	end
+end
+
 local function updateHighlight()
 	for player, highlight in pairs(highlightCache) do
 		if player ~= targetPlayer then
@@ -101,6 +128,24 @@ local function updateHighlight()
 	else
 		highlightCache[targetPlayer].Adornee = character
 	end
+end
+
+-- Harvested + upgraded target finder using util.Raycast hook approach
+local function getTargetPart(character)
+	local roll = math.random(1, 100)
+	local partName
+
+	if roll <= headshotchance then
+		partName = "Head"
+	elseif roll <= headshotchance + bodyshotchance then
+		partName = "UpperTorso"
+	else
+		partName = target_body_part
+	end
+
+	return character:FindFirstChild(partName)
+		or character:FindFirstChild("UpperTorso")
+		or character:FindFirstChild("HumanoidRootPart")
 end
 
 local function Getplayerinfov()
@@ -138,10 +183,7 @@ local function Getplayerinfov()
 			continue
 		end
 
-		-- try rivals hitbox parts first, fallback to normal
 		local targetPart = character:FindFirstChild(target_body_part)
-			or character:FindFirstChild("HitboxHead")
-			or character:FindFirstChild("HitboxBody")
 			or character:FindFirstChild("UpperTorso")
 			or rootPart
 		if not targetPart then continue end
@@ -201,60 +243,37 @@ local function Getplayerinfov()
 	return target
 end
 
-local function getTargetPart(character)
-	local roll = math.random(1, 100)
-	if roll <= headshotchance then
-		return character:FindFirstChild("HitboxHead") or character:FindFirstChild("Head")
-	elseif roll <= headshotchance + bodyshotchance then
-		return character:FindFirstChild("HitboxBody") or character:FindFirstChild("HitboxBodySmall") or character:FindFirstChild("UpperTorso")
+-- ── Util Hooks (harvested from open source) ───────────────────────────────────
+
+-- Silent aim raycast hook - redirects shots to target
+local origRaycast = util.Raycast
+util.Raycast = function(self, origin, direction, dist, ...)
+	if active and not isLobbyVisible() and targetPlayer and targetPlayer.Character then
+		if math.random(1, 100) <= accuracy then
+			local part = getTargetPart(targetPlayer.Character)
+			if part then
+				local rootPart = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+				local velocity = rootPart and rootPart.AssemblyLinearVelocity or Vector3.zero
+				local pingSeconds = localPlayer:GetNetworkPing()
+				local predictedPos = part.Position + (velocity * pingSeconds)
+				return origRaycast(self, origin, predictedPos - origin, dist, ...)
+			end
+		end
 	end
-	return character:FindFirstChild(target_body_part)
-		or character:FindFirstChild("HitboxHead")
-		or character:FindFirstChild("UpperTorso")
-		or character:FindFirstChild("HumanoidRootPart")
+	return origRaycast(self, origin, direction, dist, ...)
 end
 
-local function lockAndShoot()
-	if not targetPlayer or not targetPlayer.Character then return end
-	if math.random(1, 100) > accuracy then return end
-
-	local character = targetPlayer.Character
-	local part = getTargetPart(character)
-	if not part then return end
-
-	local screenPos = camera:WorldToViewportPoint(part.Position)
-	if screenPos.Z <= 0 then return end
-
-	-- snap camera to target
-	camera.CFrame = CFrame.new(
-		camera.CFrame.Position + (part.Position - camera.CFrame.Position).Unit * 0.5,
-		part.Position
-	)
-
-	-- fire from center of screen where camera is now pointing
-	if isLeftMouseDown or isRightMouseDown then
-		VirtualInputManager:SendMouseButtonEvent(Center.X, Center.Y, 0, true, game, 0)
-		task.wait()
-		VirtualInputManager:SendMouseButtonEvent(Center.X, Center.Y, 0, false, game, 0)
+-- Particle blocker - blocks flash/smoke/blind effects
+local origParticles = util.PlayParticles
+util.PlayParticles = function(self, obj)
+	if typeof(obj) == "Instance" then
+		local n = obj.Name:lower()
+		if n:find("flash") or n:find("smoke") or n:find("blind") then return end
 	end
+	return origParticles(self, obj)
 end
 
-UserInputService.InputBegan:Connect(function(input, isProcessed)
-	if isProcessed then return end
-	if input.UserInputType == Enum.UserInputType.MouseButton1 then
-		isLeftMouseDown = true
-	elseif input.UserInputType == Enum.UserInputType.MouseButton2 then
-		isRightMouseDown = true
-	end
-end)
-
-UserInputService.InputEnded:Connect(function(input, isProcessed)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 then
-		isLeftMouseDown = false
-	elseif input.UserInputType == Enum.UserInputType.MouseButton2 then
-		isRightMouseDown = false
-	end
-end)
+-- ── FOV Circle ────────────────────────────────────────────────────────────────
 
 local function UpdateFOVCircle()
 	local fovCircle = Circlefov
@@ -280,6 +299,8 @@ local function UpdateFOVCircle()
 	end)
 end
 
+-- ── Main Loop ─────────────────────────────────────────────────────────────────
+
 RunService:BindToRenderStep("SilentAim", Enum.RenderPriority.Camera.Value + 1, function()
 	updatesilentvalues()
 	UpdateFOVCircle()
@@ -304,12 +325,22 @@ RunService:BindToRenderStep("SilentAim", Enum.RenderPriority.Camera.Value + 1, f
 
 	if not islobby and active and aimActive then
 		targetPlayer = Getplayerinfov()
-		if targetPlayer then
-			lockAndShoot()
+
+		if targetPlayer and targetPlayer.Character then
+			expandHitbox(targetPlayer.Character)
+		else
+			restoreAllHitboxes()
 		end
 	else
 		targetPlayer = nil
+		restoreAllHitboxes()
 	end
 
 	updateHighlight()
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+	if player.Character then
+		restoreHitbox(player.Character)
+	end
 end)
