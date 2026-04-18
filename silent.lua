@@ -1,15 +1,13 @@
+local util = require(game:GetService("ReplicatedStorage").Modules.Utility)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
-local util = require(game:GetService("ReplicatedStorage").Modules.Utility)
-print("uwu client")
+
 local localPlayer = Players.LocalPlayer
 local camera = workspace.CurrentCamera
 
 local targetPlayer = nil
-local isLeftMouseDown = false
-local isRightMouseDown = false
-local autoClickConnection = nil
+local isShooting = false
 
 local sharedsilent = shared.Silentaim
 
@@ -40,8 +38,6 @@ local lastAimActive = nil
 local lastActive = nil
 local lastIsLobby = nil
 local lastTarget = nil
-
-local isShooting = false
 
 local HRP_EXPANDED_SIZE = Vector3.new(6, 6, 6)
 
@@ -130,150 +126,48 @@ local function updateHighlight()
 	end
 end
 
--- Harvested + upgraded target finder using util.Raycast hook approach
-local function getTargetPart(character)
-	local roll = math.random(1, 100)
-	local partName
-
-	if roll <= headshotchance then
-		partName = "Head"
-	elseif roll <= headshotchance + bodyshotchance then
-		partName = "UpperTorso"
-	else
-		partName = target_body_part
-	end
-
-	return character:FindFirstChild(partName)
-		or character:FindFirstChild("UpperTorso")
-		or character:FindFirstChild("HumanoidRootPart")
-end
-
-local function Getplayerinfov()
-	local target = nil
-	local bestScore = math.huge
-	local mousePos = UserInputService:GetMouseLocation()
+local function getTarget(origin)
+	local center = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y / 2)
+	local best, bestDist = nil, math.huge
 	local fovRadius = (FOVsize / 180) * (camera.ViewportSize.Y / 2)
 
-	local checkedCount = 0
-	local skippedCount = 0
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p == localPlayer then continue end
+		local char = p.Character
+		if not char then continue end
 
-	for _, player in ipairs(Players:GetPlayers()) do
-		if player == localPlayer then continue end
-		if not player.Character then continue end
+		if teamcheck and p.Team == localPlayer.Team then continue end
 
-		if teamcheck and player.Team == localPlayer.Team then
-			skippedCount += 1
-			continue
-		end
-
-		local character = player.Character
-		local humanoid = character:FindFirstChildOfClass("Humanoid")
-		if not humanoid or humanoid.Health <= 0 then
-			skippedCount += 1
-			continue
-		end
-
-		local rootPart = character:FindFirstChild("HumanoidRootPart")
-		if not rootPart then continue end
-
-		local myRoot = localPlayer.Character and localPlayer.Character:FindFirstChild("HumanoidRootPart")
-		local dist = myRoot and (rootPart.Position - myRoot.Position).Magnitude or math.huge
-		if dist > distance then
-			skippedCount += 1
-			continue
-		end
-
-		local targetPart = character:FindFirstChild(target_body_part)
-			or character:FindFirstChild("UpperTorso")
-			or rootPart
-		if not targetPart then continue end
-
-		local screenPos, onScreen = camera:WorldToViewportPoint(targetPart.Position)
-		if not onScreen then
-			skippedCount += 1
-			continue
-		end
-
-		local screenVec = Vector2.new(screenPos.X, screenPos.Y)
-		local distToCrosshair = (screenVec - mousePos).Magnitude
-		if distToCrosshair > fovRadius then
-			skippedCount += 1
-			continue
-		end
+		local head = char:FindFirstChild("Head")
+		local hum = char:FindFirstChildOfClass("Humanoid")
+		if not head or not hum or hum.Health <= 0 then continue end
+		if (origin - head.Position).Magnitude > distance then continue end
 
 		if wallcheck then
-			local origin = camera.CFrame.Position
-			local direction = targetPart.Position - origin
 			local rayParams = RaycastParams.new()
-			rayParams.FilterDescendantsInstances = {localPlayer.Character, character}
+			rayParams.FilterDescendantsInstances = {localPlayer.Character, char}
 			rayParams.FilterType = Enum.RaycastFilterType.Exclude
-			local result = workspace:Raycast(origin, direction, rayParams)
-			if result then
-				skippedCount += 1
-				continue
-			end
+			local result = workspace:Raycast(camera.CFrame.Position, head.Position - camera.CFrame.Position, rayParams)
+			if result then continue end
 		end
 
-		local score
-		if target_priority == "Closest To Crosshair" or target_priority == "Closest" then
-			score = distToCrosshair
-		elseif target_priority == "Distance" then
-			score = dist
-		elseif target_priority == "Health" then
-			score = humanoid.Health
-		elseif target_priority == "Random" then
-			score = math.random()
-		else
-			score = distToCrosshair
-		end
+		local sp, vis = camera:WorldToViewportPoint(head.Position)
+		if not vis then continue end
 
-		checkedCount += 1
-
-		if score < bestScore then
-			bestScore = score
-			target = player
+		local d = (Vector2.new(sp.X, sp.Y) - center).Magnitude
+		if d < fovRadius and d < bestDist then
+			bestDist = d
+			best = head
+			targetPlayer = p
 		end
 	end
 
-	if target ~= lastTarget then
-		print("[SilentAim] Target changed: " .. (target and target.Name or "nil") .. " | Checked: " .. checkedCount .. " | Skipped: " .. skippedCount)
-		lastTarget = target
+	if not best then
+		targetPlayer = nil
 	end
 
-	return target
+	return best
 end
-
--- ── Util Hooks (harvested from open source) ───────────────────────────────────
-
--- Silent aim raycast hook - redirects shots to target
-local origRaycast = util.Raycast
-util.Raycast = function(self, origin, direction, dist, ...)
-	if active and not isLobbyVisible() and targetPlayer and targetPlayer.Character then
-		if math.random(1, 100) <= accuracy then
-			local part = getTargetPart(targetPlayer.Character)
-			if part then
-				local rootPart = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
-				local velocity = rootPart and rootPart.AssemblyLinearVelocity or Vector3.zero
-				local pingSeconds = localPlayer:GetNetworkPing()
-				local predictedPos = part.Position + (velocity * pingSeconds)
-				return origRaycast(self, origin, predictedPos - origin, dist, ...)
-			end
-		end
-	end
-	return origRaycast(self, origin, direction, dist, ...)
-end
-
--- Particle blocker - blocks flash/smoke/blind effects
-local origParticles = util.PlayParticles
-util.PlayParticles = function(self, obj)
-	if typeof(obj) == "Instance" then
-		local n = obj.Name:lower()
-		if n:find("flash") or n:find("smoke") or n:find("blind") then return end
-	end
-	return origParticles(self, obj)
-end
-
--- ── FOV Circle ────────────────────────────────────────────────────────────────
 
 local function UpdateFOVCircle()
 	local fovCircle = Circlefov
@@ -299,8 +193,34 @@ local function UpdateFOVCircle()
 	end)
 end
 
--- ── Main Loop ─────────────────────────────────────────────────────────────────
+-- Util hooks
+local origRaycast = util.Raycast
+util.Raycast = function(self, origin, direction, dist, ...)
+	if active and not isLobbyVisible() then
+		local myRoot = localPlayer.Character and localPlayer.Character:FindFirstChild("HumanoidRootPart")
+		local head = getTarget(myRoot and myRoot.Position or origin)
 
+		if head and math.random(1, 100) <= accuracy then
+			local rootPart = head.Parent:FindFirstChild("HumanoidRootPart")
+			local velocity = rootPart and rootPart.AssemblyLinearVelocity or Vector3.zero
+			local pingSeconds = localPlayer:GetNetworkPing()
+			local predictedPos = head.Position + (velocity * pingSeconds)
+			return origRaycast(self, origin, predictedPos - origin, dist, ...)
+		end
+	end
+	return origRaycast(self, origin, direction, dist, ...)
+end
+
+local origParticles = util.PlayParticles
+util.PlayParticles = function(self, obj)
+	if typeof(obj) == "Instance" then
+		local n = obj.Name:lower()
+		if n:find("flash") or n:find("smoke") or n:find("blind") then return end
+	end
+	return origParticles(self, obj)
+end
+
+-- Main loop
 RunService:BindToRenderStep("SilentAim", Enum.RenderPriority.Camera.Value + 1, function()
 	updatesilentvalues()
 	UpdateFOVCircle()
@@ -324,7 +244,8 @@ RunService:BindToRenderStep("SilentAim", Enum.RenderPriority.Camera.Value + 1, f
 	end
 
 	if not islobby and active and aimActive then
-		targetPlayer = Getplayerinfov()
+		local myRoot = localPlayer.Character and localPlayer.Character:FindFirstChild("HumanoidRootPart")
+		local head = getTarget(myRoot and myRoot.Position or camera.CFrame.Position)
 
 		if targetPlayer and targetPlayer.Character then
 			expandHitbox(targetPlayer.Character)
