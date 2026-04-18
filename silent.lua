@@ -266,32 +266,36 @@ local toggleState = false
 local wasAimKeyDown = false
 
 local function loop()
-	updatesilentvalues()
-	UpdateFOVCircle()
+    updatesilentvalues()
+    UpdateFOVCircle()
 
-	local isaimkeydown = IsAimKeyDown()
-	local islobby = isLobbyVisible()
+    local isaimkeydown = IsAimKeyDown()
+    local islobby = isLobbyVisible()
 
-	-- Handle toggle mode
-	if mode == "Toggle" then
-		if isaimkeydown and not wasAimKeyDown then
-			toggleState = not toggleState
-		end
-		wasAimKeyDown = isaimkeydown
-	elseif mode == "Hold" then
-		toggleState = isaimkeydown
-	elseif mode == "Always" then
-		toggleState = true
-	end
+    if mode == "Toggle" then
+        if isaimkeydown and not wasAimKeyDown then
+            toggleState = not toggleState
+        end
+        wasAimKeyDown = isaimkeydown
+    elseif mode == "Hold" then
+        toggleState = isaimkeydown
+    elseif mode == "Always" then
+        toggleState = true
+    end
 
-	if not islobby and active and toggleState then
-		targetPlayer = Getplayerinfov()
-		if targetPlayer then
-			lockCameraToHead()
-		end
-	else
-		targetPlayer = nil
-	end
+    -- ADD THESE:
+    print("[Loop] active=" .. tostring(active) .. " | toggleState=" .. tostring(toggleState) .. " | islobby=" .. tostring(islobby) .. " | mode=" .. tostring(mode))
+
+    if not islobby and active and toggleState then
+        print("[Loop] Calling Getplayerinfov...")
+        targetPlayer = Getplayerinfov()
+        if targetPlayer then
+            lockCameraToHead()
+        end
+    else
+        print("[Loop] BLOCKED — reason: " .. (islobby and "in lobby" or not active and "active=false" or not toggleState and "toggleState=false" or "unknown"))
+        targetPlayer = nil
+    end
 end
 
 RunService.Heartbeat:Connect(function()
