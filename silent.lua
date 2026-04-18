@@ -4,14 +4,15 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
 
 local localPlayer = Players.LocalPlayer
 local camera = workspace.CurrentCamera
+local Center = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y / 2)
 
 local targetPlayer = nil
 local isLeftMouseDown = false
 local isRightMouseDown = false
-local autoClickConnection = nil
 
 local sharedsilent = shared.Silentaim
 
@@ -27,7 +28,7 @@ local wallcheck = false
 local teamcheck = false
 local distance = 100
 local target_priority = "Closest"
-local target_body_part = "UpperTorso"
+local target_body_part = "HitboxHead" -- rivals custom hitbox
 local activatetoggle = "MB2"
 local mode = "Hold"
 local highlight_target = false
@@ -36,16 +37,16 @@ local fovCirclePos = nil
 local Circlefov = sharedsilent.sfovCircle
 
 local highlightCache = {}
-local hrpSizeCache = {} -- store original HRP sizes
 
 local lastAimActive = nil
 local lastActive = nil
 local lastIsLobby = nil
 local lastTarget = nil
 
-local isShooting = false
-
-local HRP_EXPANDED_SIZE = Vector3.new(6, 6, 6) -- expanded hitbox size, tweak as needed
+-- update center on viewport change
+RunService.RenderStepped:Connect(function()
+	Center = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y / 2)
+end)
 
 local function updatesilentvalues()
 	pcall(function()
@@ -75,41 +76,6 @@ local function isLobbyVisible()
 	return localPlayer.PlayerGui.MainGui.MainFrame.Lobby.Currency.Visible == true
 end
 
--- expand HRP of a character, cache original size
-local function expandHitbox(character)
-	if not character then return end
-	local hrp = character:FindFirstChild("HumanoidRootPart")
-	if not hrp then return end
-
-	if not hrpSizeCache[character] then
-		hrpSizeCache[character] = hrp.Size
-		hrp.Size = HRP_EXPANDED_SIZE
-	end
-end
-
--- restore HRP to original size
-local function restoreHitbox(character)
-	if not character then return end
-	local hrp = character:FindFirstChild("HumanoidRootPart")
-	if not hrp then return end
-
-	if hrpSizeCache[character] then
-		hrp.Size = hrpSizeCache[character]
-		hrpSizeCache[character] = nil
-	end
-end
-
--- restore all hitboxes (called when aim is off or no target)
-local function restoreAllHitboxes()
-	for character, originalSize in pairs(hrpSizeCache) do
-		local hrp = character:FindFirstChild("HumanoidRootPart")
-		if hrp then
-			hrp.Size = originalSize
-		end
-		hrpSizeCache[character] = nil
-	end
-end
-
 local function updateHighlight()
 	for player, highlight in pairs(highlightCache) do
 		if player ~= targetPlayer then
@@ -118,9 +84,7 @@ local function updateHighlight()
 		end
 	end
 
-	if not highlight_target or not targetPlayer or not targetPlayer.Character then
-		return
-	end
+	if not highlight_target or not targetPlayer or not targetPlayer.Character then return end
 
 	local character = targetPlayer.Character
 
@@ -174,7 +138,10 @@ local function Getplayerinfov()
 			continue
 		end
 
+		-- try rivals hitbox parts first, fallback to normal
 		local targetPart = character:FindFirstChild(target_body_part)
+			or character:FindFirstChild("HitboxHead")
+			or character:FindFirstChild("HitboxBody")
 			or character:FindFirstChild("UpperTorso")
 			or rootPart
 		if not targetPart then continue end
@@ -236,22 +203,18 @@ end
 
 local function getTargetPart(character)
 	local roll = math.random(1, 100)
-	local partName
-
 	if roll <= headshotchance then
-		partName = "Head"
+		return character:FindFirstChild("HitboxHead") or character:FindFirstChild("Head")
 	elseif roll <= headshotchance + bodyshotchance then
-		partName = "UpperTorso"
-	else
-		partName = target_body_part
+		return character:FindFirstChild("HitboxBody") or character:FindFirstChild("HitboxBodySmall") or character:FindFirstChild("UpperTorso")
 	end
-
-	return character:FindFirstChild(partName)
+	return character:FindFirstChild(target_body_part)
+		or character:FindFirstChild("HitboxHead")
 		or character:FindFirstChild("UpperTorso")
 		or character:FindFirstChild("HumanoidRootPart")
 end
 
-local function lockCameraToHead()
+local function lockAndShoot()
 	if not targetPlayer or not targetPlayer.Character then return end
 	if math.random(1, 100) > accuracy then return end
 
@@ -259,59 +222,39 @@ local function lockCameraToHead()
 	local part = getTargetPart(character)
 	if not part then return end
 
-	-- predict position based on velocity + ping
-	local rootPart = character:FindFirstChild("HumanoidRootPart")
-	local velocity = rootPart and rootPart.AssemblyLinearVelocity or Vector3.zero
-	local pingSeconds = localPlayer:GetNetworkPing()
-	local predictedPosition = part.Position + (velocity * pingSeconds)
+	local screenPos = camera:WorldToViewportPoint(part.Position)
+	if screenPos.Z <= 0 then return end
 
-	local screenPos = camera:WorldToViewportPoint(predictedPosition)
-	if screenPos.Z > 0 then
-		local targetCFrame = CFrame.new(camera.CFrame.Position, predictedPosition)
-		camera.CFrame = camera.CFrame:Lerp(targetCFrame, 0.85)
+	-- snap camera to target
+	camera.CFrame = CFrame.new(
+		camera.CFrame.Position + (part.Position - camera.CFrame.Position).Unit * 0.5,
+		part.Position
+	)
+
+	-- fire from center of screen where camera is now pointing
+	if isLeftMouseDown or isRightMouseDown then
+		VirtualInputManager:SendMouseButtonEvent(Center.X, Center.Y, 0, true, game, 0)
+		task.wait()
+		VirtualInputManager:SendMouseButtonEvent(Center.X, Center.Y, 0, false, game, 0)
 	end
-end
---[[
-local function autoClick()
-	if autoClickConnection then
-		autoClickConnection:Disconnect()
-	end
-	autoClickConnection = RunService.Heartbeat:Connect(function()
-		if isLeftMouseDown or isRightMouseDown then
-			if not isLobbyVisible() then
-				mouse1click()
-			end
-		else
-			autoClickConnection:Disconnect()
-		end
-	end)
 end
 
 UserInputService.InputBegan:Connect(function(input, isProcessed)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 and not isProcessed then
-		if not isLeftMouseDown then
-			isLeftMouseDown = true
-			isShooting = true
-			autoClick()
-		end
-	elseif input.UserInputType == Enum.UserInputType.MouseButton2 and not isProcessed then
-		if not isRightMouseDown then
-			isRightMouseDown = true
-			isShooting = true
-			autoClick()
-		end
+	if isProcessed then return end
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		isLeftMouseDown = true
+	elseif input.UserInputType == Enum.UserInputType.MouseButton2 then
+		isRightMouseDown = true
 	end
 end)
 
 UserInputService.InputEnded:Connect(function(input, isProcessed)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 and not isProcessed then
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
 		isLeftMouseDown = false
-		if not isRightMouseDown then isShooting = false end
-	elseif input.UserInputType == Enum.UserInputType.MouseButton2 and not isProcessed then
+	elseif input.UserInputType == Enum.UserInputType.MouseButton2 then
 		isRightMouseDown = false
-		if not isLeftMouseDown then isShooting = false end
 	end
-end)]]
+end)
 
 local function UpdateFOVCircle()
 	local fovCircle = Circlefov
@@ -361,29 +304,12 @@ RunService:BindToRenderStep("SilentAim", Enum.RenderPriority.Camera.Value + 1, f
 
 	if not islobby and active and aimActive then
 		targetPlayer = Getplayerinfov()
-
-		if targetPlayer and targetPlayer.Character then
-			-- expand hitbox while targeting
-			expandHitbox(targetPlayer.Character)
-
-			if isShooting then
-				lockCameraToHead()
-			end
-		else
-			-- no target, restore all hitboxes
-			restoreAllHitboxes()
+		if targetPlayer then
+			lockAndShoot()
 		end
 	else
 		targetPlayer = nil
-		restoreAllHitboxes()
 	end
 
 	updateHighlight()
-end)
-
--- clean up hitboxes if character is removed mid game
-Players.PlayerRemoving:Connect(function(player)
-	if player.Character then
-		restoreHitbox(player.Character)
-	end
 end)
