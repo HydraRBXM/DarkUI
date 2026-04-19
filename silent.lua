@@ -10,6 +10,7 @@ local UIS = UserInputService
 local mrand = math.random
 local mhuge = math.huge
 local msqrt = math.sqrt
+local tick = tick
 
 local sharedsilent = shared.Silentaim
 
@@ -66,6 +67,7 @@ local ZERO3 = Vector3.zero
 local Circlefov = sharedsilent.sfovCircle
 local fovCirclePos = nil
 local hlCache = {}
+
 local _lobbyRef = nil
 
 -- ── Settings ──────────────────────────────────────────────────────────────────
@@ -80,10 +82,9 @@ local function syncSettings()
 		s_teamcheck  = sharedsilent.sTeamCheck.Value
 		s_highlight  = sharedsilent.sShowTarget.Value
 		s_showFov    = sharedsilent.sShowfov.Value
-		-- FIX: clamp accuracy to 0-100
-		s_accuracy   = math.clamp(sharedsilent.sHitChance.Value, 0, 100)
-		s_bodychance = math.clamp(sharedsilent.sBodyShotChance.Value, 0, 100)
-		s_headchance = math.clamp(sharedsilent.sHeadshotChance.Value, 0, 100)
+		s_accuracy   = sharedsilent.sHitChance.Value
+		s_bodychance = sharedsilent.sBodyShotChance.Value
+		s_headchance = sharedsilent.sHeadshotChance.Value
 		s_mode       = sharedsilent.sMode
 		s_key        = sharedsilent.sSilentAimKey.Value
 		s_fov        = sharedsilent.sFov.Value
@@ -93,7 +94,7 @@ local function syncSettings()
 	end)
 end
 
--- ── Key ───────────────────────────────────────────────────────────────────────
+-- ── Key Cache ─────────────────────────────────────────────────────────────────
 
 local function syncKey()
 	if s_key == keyStr then return end
@@ -117,7 +118,7 @@ local function keyDown()
 	return false
 end
 
-local function isAimActive()
+local function aimActive()
 	local kd = keyDown()
 	if s_mode == "Hold" then return kd end
 	if s_mode == "Toggle" then
@@ -241,10 +242,9 @@ end
 
 -- ── Target Finder ─────────────────────────────────────────────────────────────
 
-local function getTarget()
+local function getTarget(ox, oy, oz)
 	local best, bestDSq = nil, mhuge
 	local myChar = lp.Character
-	local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
 	local n = #playerCache
 
 	for i = 1, n do
@@ -253,24 +253,21 @@ local function getTarget()
 		if not char or char == myChar then continue end
 		if s_teamcheck and p.Team == lp.Team then continue end
 
+		local head = char:FindFirstChild("Head")
+		if not head then continue end
+
+		local hx = head.Position.X
+		local hy = head.Position.Y
+		local hz = head.Position.Z
+
+		-- distance from camera
+		local ddx = c_pos.X - hx
+		local ddy = c_pos.Y - hy
+		local ddz = c_pos.Z - hz
+		if (ddx*ddx + ddy*ddy + ddz*ddz) > s_distSq then continue end
+
 		local hum = char:FindFirstChild("Humanoid")
 		if not hum or hum.Health <= 0 then continue end
-
-		-- FIX: use player root distance, not camera distance
-		local root = char:FindFirstChild("HumanoidRootPart")
-		if not root then continue end
-
-		if myRoot then
-			local dx = myRoot.Position.X - root.Position.X
-			local dy = myRoot.Position.Y - root.Position.Y
-			local dz = myRoot.Position.Z - root.Position.Z
-			if (dx*dx + dy*dy + dz*dz) > s_distSq then continue end
-		end
-
-		-- prefer rivals hitbox parts, fallback to head
-		local head = char:FindFirstChild("HitboxHead")
-			or char:FindFirstChild("Head")
-		if not head then continue end
 
 		local sp, vis = cam:WorldToViewportPoint(head.Position)
 		if not vis or sp.Z <= 0 then continue end
@@ -283,8 +280,7 @@ local function getTarget()
 
 		if s_wallcheck then
 			rp.FilterDescendantsInstances = {myChar, char}
-			local dir = head.Position - c_pos
-			local res = WS:Raycast(c_pos, dir, rp)
+			local res = WS:Raycast(c_pos, Vector3.new(hx - c_pos.X, hy - c_pos.Y, hz - c_pos.Z), rp)
 			if res then continue end
 		end
 
@@ -293,13 +289,8 @@ local function getTarget()
 		targetPlayer = p
 	end
 
-	if not best then
-		targetPlayer = nil
-		targetHead = nil
-	else
-		targetHead = best
-	end
-
+	if not best then targetPlayer = nil end
+	targetHead = best
 	return best
 end
 
@@ -319,40 +310,38 @@ local function drawFOV()
 	Circlefov.Visible = true
 end
 
--- ── Util Hook ─────────────────────────────────────────────────────────────────
+-- ── Util Hooks ────────────────────────────────────────────────────────────────
 
 local origRaycast = util.Raycast
 util.Raycast = function(self, origin, direction, dist, ...)
-	-- only redirect if aim is active and we have a locked target
-	if s_active and not isLobby() and isAimActive() and targetHead then
-		-- FIX: accuracy is a percentage, roll 1-100 and check if within accuracy
-		if mrand(1, 100) <= s_accuracy then
-			local hrp = targetHead.Parent:FindFirstChild("HumanoidRootPart")
+	if s_active and not isLobby() and aimActive() then
+		local ox = origin.X
+		local oy = origin.Y
+		local oz = origin.Z
+		local target = getTarget(ox, oy, oz)
+
+		if target and mrand(100) <= s_accuracy then
+			local hrp = target.Parent:FindFirstChild("HumanoidRootPart")
 			local vel = hrp and hrp.AssemblyLinearVelocity or ZERO3
 
-			local tx = targetHead.Position.X
-			local ty = targetHead.Position.Y
-			local tz = targetHead.Position.Z
+			local tx = target.Position.X
+			local ty = target.Position.Y
+			local tz = target.Position.Z
 
-			-- bullet travel time prediction
-			local ox = origin.X
-			local oy = origin.Y
-			local oz = origin.Z
+			-- travel time = bullet travel + ping
 			local tdx = tx - ox
 			local tdy = ty - oy
 			local tdz = tz - oz
 			local travelDist = msqrt(tdx*tdx + tdy*tdy + tdz*tdz)
-
-			-- rivals bullet speed ~300 studs/s
 			local bulletSpeed = 300
 			local travelTime = (travelDist / bulletSpeed) + getPing()
 
-			-- predicted position accounting for target movement
+			-- predicted position
 			local px = tx + vel.X * travelTime
 			local py = ty + vel.Y * travelTime
 			local pz = tz + vel.Z * travelTime
 
-			-- build redirected direction scaled to original dist
+			-- proper direction vector scaled to dist
 			local ddx = px - ox
 			local ddy = py - oy
 			local ddz = pz - oz
@@ -360,14 +349,20 @@ util.Raycast = function(self, origin, direction, dist, ...)
 
 			if len > 0 then
 				local scale = dist / len
-				return origRaycast(self,
-					origin,
-					Vector3.new(ddx * scale, ddy * scale, ddz * scale),
-					dist, ...)
+				return origRaycast(self, origin, Vector3.new(ddx*scale, ddy*scale, ddz*scale), dist, ...)
 			end
 		end
 	end
 	return origRaycast(self, origin, direction, dist, ...)
+end
+
+local origParticles = util.PlayParticles
+util.PlayParticles = function(self, obj)
+	if typeof(obj) == "Instance" then
+		local n = obj.Name:lower()
+		if n:find("flash") or n:find("smoke") or n:find("blind") then return end
+	end
+	return origParticles(self, obj)
 end
 
 -- ── Main Loop ─────────────────────────────────────────────────────────────────
@@ -377,8 +372,8 @@ RunService:BindToRenderStep("SilentAim", Enum.RenderPriority.Camera.Value + 1, f
 
 	syncCamera()
 
-	-- sync settings/players every 6 frames (~10x/sec at 60fps)
-	if frameCount % 6 == 0 then
+	local f6 = frameCount % 6 == 0
+	if f6 then
 		syncSettings()
 		syncKey()
 		syncPlayers()
@@ -387,8 +382,8 @@ RunService:BindToRenderStep("SilentAim", Enum.RenderPriority.Camera.Value + 1, f
 
 	drawFOV()
 
-	if not isLobby() and s_active and isAimActive() then
-		getTarget()
+	if not isLobby() and s_active and aimActive() then
+		getTarget(c_pos.X, c_pos.Y, c_pos.Z)
 
 		if targetPlayer and targetPlayer.Character then
 			expandHitbox(targetPlayer.Character)
@@ -396,13 +391,11 @@ RunService:BindToRenderStep("SilentAim", Enum.RenderPriority.Camera.Value + 1, f
 			restoreHitboxes()
 		end
 	else
-		if targetPlayer then
+		if targetPlayer or toggleState then
 			targetPlayer = nil
 			targetHead = nil
-			restoreHitboxes()
-		end
-		if s_mode == "Hold" then
 			toggleState = false
+			restoreHitboxes()
 		end
 	end
 end)
