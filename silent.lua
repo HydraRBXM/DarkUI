@@ -3,308 +3,396 @@ local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 
-local localPlayer = Players.LocalPlayer
-local camera = workspace.CurrentCamera
+-- hard locals, fastest possible lookup
+local lp = Players.LocalPlayer
+local cam = workspace.CurrentCamera
+local WS = workspace
+local UIS = UserInputService
+local mrand = math.random
+local mhuge = math.huge
+local tick = tick
+local ipairs = ipairs
+local pairs = pairs
 
-local targetPlayer = nil
-local targetHead = nil
 local sharedsilent = shared.Silentaim
 
-local accuracy = 100
-local bodyshotchance = 98
-local headshotchance = 67
-local FOVsize = 80
-local ShowFov = true
-local active = false
-local legit = false
-local wallcheck = false
-local teamcheck = false
-local distance = 100
-local target_priority = "Closest"
-local target_body_part = "UpperTorso"
-local activatetoggle = "MB2"
-local mode = "Hold"
-local highlight_target = false
-
-local fovCirclePos = nil
-local Circlefov = sharedsilent.sfovCircle
-
-local highlightCache = {}
-local hrpSizeCache = {}
-local lastAimActive = nil
-local lastActive = nil
-local lastIsLobby = nil
+-- state
+local targetPlayer = nil
+local targetHead = nil
 local toggleState = false
 local lastKeyState = false
+local frameCount = 0
 
-local HRP_EXPANDED_SIZE = Vector3.new(6, 6, 6)
+-- settings (flat locals, no table lookups in hot path)
+local s_active = false
+local s_wallcheck = false
+local s_teamcheck = false
+local s_distance = 100
+local s_distSq = 10000
+local s_fov = 80
+local s_showFov = true
+local s_accuracy = 100
+local s_mode = "Hold"
+local s_key = "MB2"
+local s_highlight = false
+local s_bodychance = 98
+local s_headchance = 67
 
--- reuse raycast params, never create new ones in loop
-local wallRayParams = RaycastParams.new()
-wallRayParams.FilterType = Enum.RaycastFilterType.Exclude
+-- camera cache (updated once per frame)
+local c_pos = Vector3.zero
+local c_vpx = 0
+local c_vpy = 0
+local c_fovSq = 0
+local c_fovR = 0
 
-local function updatesilentvalues()
-	pcall(function()
-		active           = sharedsilent.sActive.Value
-		legit            = sharedsilent.sLegit.Value
-		wallcheck        = sharedsilent.sWallCheck.Value
-		teamcheck        = sharedsilent.sTeamCheck.Value
-		distance         = sharedsilent.sdistance.Value
-		target_priority  = sharedsilent.sTargetPriority.Value
-		target_body_part = sharedsilent.sTargetBodyPart.Value
-		activatetoggle   = sharedsilent.sSilentAimKey.Value
-		mode             = sharedsilent.sMode
-		ShowFov          = sharedsilent.sShowfov.Value
-		FOVsize          = sharedsilent.sFov.Value
-		highlight_target = sharedsilent.sShowTarget.Value
-		accuracy         = sharedsilent.sHitChance.Value
-		bodyshotchance   = sharedsilent.sBodyShotChance.Value
-		headshotchance   = sharedsilent.sHeadshotChance.Value
-		if ShowFov then Circlefov.Visible = ShowFov end
-	end)
-end
-
--- cache lobby check result, only re-check every 0.5s
+-- caches
 local lobbyCache = false
-local lastLobbyCheck = 0
-local function isLobbyVisible()
-	local now = tick()
-	if now - lastLobbyCheck > 0.5 then
-		lastLobbyCheck = now
-		lobbyCache = localPlayer.PlayerGui.MainGui.MainFrame.Lobby.Currency.Visible == true
-	end
-	return lobbyCache
+local lastLobbyTick = 0
+local cachedPing = 0
+local lastPingTick = 0
+local lastSettingsTick = 0
+local lastPlayersTick = 0
+local playerCache = {}
+
+-- hitbox
+local hrpCache = {}
+local HRP_SIZE = Vector3.new(6, 6, 6)
+
+-- key cache
+local keyMB = nil
+local keyEnum = nil
+local keyStr = ""
+
+-- pre-alloc rayparams once
+local rp = RaycastParams.new()
+rp.FilterType = Enum.RaycastFilterType.Exclude
+rp.IgnoreWater = true
+
+-- pre-cache enums
+local _MB1 = Enum.UserInputType.MouseButton1
+local _MB2 = Enum.UserInputType.MouseButton2
+local _MB3 = Enum.UserInputType.MouseButton3
+local ZERO3 = Vector3.zero
+
+-- fov circle
+local Circlefov = sharedsilent.sfovCircle
+local fovCirclePos = nil
+
+-- highlight cache
+local hlCache = {}
+
+-- ── Settings ──────────────────────────────────────────────────────────────────
+
+local function syncSettings()
+    local now = tick()
+    if now - lastSettingsTick < 0.15 then return end
+    lastSettingsTick = now
+    pcall(function()
+        s_active     = sharedsilent.sActive.Value
+        s_wallcheck  = sharedsilent.sWallCheck.Value
+        s_teamcheck  = sharedsilent.sTeamCheck.Value
+        s_highlight  = sharedsilent.sShowTarget.Value
+        s_showFov    = sharedsilent.sShowfov.Value
+        s_accuracy   = sharedsilent.sHitChance.Value
+        s_bodychance = sharedsilent.sBodyShotChance.Value
+        s_headchance = sharedsilent.sHeadshotChance.Value
+        s_mode       = sharedsilent.sMode
+        s_key        = sharedsilent.sSilentAimKey.Value
+        s_fov        = sharedsilent.sFov.Value
+        local d      = sharedsilent.sdistance.Value
+        s_distance   = d
+        s_distSq     = d * d
+    end)
 end
 
-local function isAimKeyDown()
-	if not activatetoggle then return false end
-	if activatetoggle:match("^MB%d") then
-		local buttonNum = tonumber(activatetoggle:match("%d"))
-		if buttonNum then
-			return UserInputService:IsMouseButtonPressed(Enum.UserInputType["MouseButton" .. buttonNum])
-		end
-	else
-		local keyEnum = Enum.KeyCode[activatetoggle]
-		if keyEnum then
-			return UserInputService:IsKeyDown(keyEnum)
-		end
-	end
-	return false
+-- ── Key Cache ─────────────────────────────────────────────────────────────────
+
+local function syncKey()
+    if s_key == keyStr then return end
+    keyStr = s_key
+    keyMB = nil
+    keyEnum = nil
+    if not s_key then return end
+    if s_key:sub(1,2) == "MB" then
+        local n = tonumber(s_key:sub(3))
+        if n == 1 then keyMB = _MB1
+        elseif n == 2 then keyMB = _MB2
+        elseif n == 3 then keyMB = _MB3 end
+    else
+        keyEnum = Enum.KeyCode[s_key]
+    end
 end
 
-local function isAimActive()
-	local keyDown = isAimKeyDown()
-	if mode == "Hold" then
-		return keyDown
-	elseif mode == "Toggle" then
-		if keyDown and not lastKeyState then
-			toggleState = not toggleState
-		end
-		lastKeyState = keyDown
-		return toggleState
-	elseif mode == "Always" then
-		return true
-	end
-	return false
+local function keyDown()
+    if keyMB then return UIS:IsMouseButtonPressed(keyMB) end
+    if keyEnum then return UIS:IsKeyDown(keyEnum) end
+    return false
 end
 
-local function expandHitbox(character)
-	if not character then return end
-	local hrp = character:FindFirstChild("HumanoidRootPart")
-	if not hrp then return end
-	if not hrpSizeCache[character] then
-		hrpSizeCache[character] = hrp.Size
-		hrp.Size = HRP_EXPANDED_SIZE
-	end
+local function aimActive()
+    local kd = keyDown()
+    if s_mode == "Hold" then return kd end
+    if s_mode == "Toggle" then
+        if kd and not lastKeyState then toggleState = not toggleState end
+        lastKeyState = kd
+        return toggleState
+    end
+    if s_mode == "Always" then return true end
+    return false
 end
 
-local function restoreHitbox(character)
-	if not character then return end
-	local hrp = character:FindFirstChild("HumanoidRootPart")
-	if not hrp then return end
-	if hrpSizeCache[character] then
-		hrp.Size = hrpSizeCache[character]
-		hrpSizeCache[character] = nil
-	end
+-- ── Lobby Check ───────────────────────────────────────────────────────────────
+
+local _lobbyRef = nil
+local function isLobby()
+    local now = tick()
+    if now - lastLobbyTick < 0.5 then return lobbyCache end
+    lastLobbyTick = now
+    if not _lobbyRef then
+        pcall(function()
+            _lobbyRef = lp.PlayerGui.MainGui.MainFrame.Lobby.Currency
+        end)
+    end
+    lobbyCache = _lobbyRef and _lobbyRef.Visible or false
+    return lobbyCache
 end
 
-local function restoreAllHitboxes()
-	for character, originalSize in pairs(hrpSizeCache) do
-		local hrp = character:FindFirstChild("HumanoidRootPart")
-		if hrp then hrp.Size = originalSize end
-		hrpSizeCache[character] = nil
-	end
+-- ── Ping Cache ────────────────────────────────────────────────────────────────
+
+local function getPing()
+    local now = tick()
+    if now - lastPingTick < 1 then return cachedPing end
+    lastPingTick = now
+    cachedPing = lp:GetNetworkPing()
+    return cachedPing
 end
 
-local function updateHighlight()
-	if not highlight_target then
-		for player, highlight in pairs(highlightCache) do
-			highlight:Destroy()
-			highlightCache[player] = nil
-		end
-		return
-	end
+-- ── Player Cache ──────────────────────────────────────────────────────────────
 
-	for player, highlight in pairs(highlightCache) do
-		if player ~= targetPlayer then
-			highlight:Destroy()
-			highlightCache[player] = nil
-		end
-	end
-
-	if not targetPlayer or not targetPlayer.Character then return end
-	local character = targetPlayer.Character
-
-	if not highlightCache[targetPlayer] then
-		local hl = Instance.new("Highlight")
-		hl.FillColor = Color3.fromRGB(255, 0, 0)
-		hl.OutlineColor = Color3.fromRGB(255, 255, 255)
-		hl.FillTransparency = 0.5
-		hl.OutlineTransparency = 0
-		hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-		hl.Adornee = character
-		hl.Parent = character
-		highlightCache[targetPlayer] = hl
-	else
-		highlightCache[targetPlayer].Adornee = character
-	end
+local function syncPlayers()
+    local now = tick()
+    if now - lastPlayersTick < 2 then return end
+    lastPlayersTick = now
+    table.clear(playerCache)
+    local all = Players:GetPlayers()
+    local n = 0
+    for i = 1, #all do
+        local p = all[i]
+        if p ~= lp then
+            n += 1
+            playerCache[n] = p
+        end
+    end
 end
 
-local function getTarget(origin)
-	local camPos = camera.CFrame.Position
-	local vpX = camera.ViewportSize.X * 0.5
-	local vpY = camera.ViewportSize.Y * 0.5
-	local center = Vector2.new(vpX, vpY)
-	local fovRadius = (FOVsize / 180) * vpY
-	local myChar = localPlayer.Character
-	local best, bestDist = nil, math.huge
+Players.PlayerAdded:Connect(function() lastPlayersTick = 0 end)
+Players.PlayerRemoving:Connect(function(p)
+    lastPlayersTick = 0
+    local char = p.Character
+    if char and hrpCache[char] then
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if hrp then hrp.Size = hrpCache[char] end
+        hrpCache[char] = nil
+    end
+end)
 
-	for _, p in ipairs(Players:GetPlayers()) do
-		if p == localPlayer then continue end
-		local char = p.Character
-		if not char or char == myChar then continue end
-		if teamcheck and p.Team == localPlayer.Team then continue end
+-- ── Camera Cache ──────────────────────────────────────────────────────────────
 
-		local head = char:FindFirstChild("Head")
-		local hum = char:FindFirstChild("Humanoid")
-		if not head or not hum or hum.Health <= 0 then continue end
-		if (origin - head.Position).Magnitude > distance then continue end
-
-		local sp, vis = camera:WorldToViewportPoint(head.Position)
-		if not vis then continue end
-
-		local d = (Vector2.new(sp.X, sp.Y) - center).Magnitude
-		if d >= fovRadius or d >= bestDist then continue end
-
-		if wallcheck then
-			wallRayParams.FilterDescendantsInstances = {myChar, char}
-			local res = workspace:Raycast(camPos, head.Position - camPos, wallRayParams)
-			if res then continue end
-		end
-
-		bestDist = d
-		best = head
-		targetPlayer = p
-	end
-
-	if not best then
-		targetPlayer = nil
-	end
-
-	targetHead = best
-	return best
+local function syncCamera()
+    local cf = cam.CFrame
+    c_pos = cf.Position
+    local vp = cam.ViewportSize
+    c_vpx = vp.X * 0.5
+    c_vpy = vp.Y * 0.5
+    c_fovR = (s_fov / 180) * c_vpy
+    c_fovSq = c_fovR * c_fovR
 end
 
-local function UpdateFOVCircle()
-	local fovCircle = Circlefov
-	if not fovCircle then return end
+-- ── Hitbox ────────────────────────────────────────────────────────────────────
 
-	if not ShowFov or not active then
-		fovCircle.Visible = false
-		return
-	end
-
-	local mousePos = UserInputService:GetMouseLocation()
-	local radius = (FOVsize / 180) * (camera.ViewportSize.Y * 0.5)
-	fovCirclePos = fovCirclePos and fovCirclePos:Lerp(mousePos, 0.28) or mousePos
-
-	fovCircle.Position = UDim2.new(0, fovCirclePos.X - radius, 0, fovCirclePos.Y - radius)
-	fovCircle.Size = UDim2.new(0, radius * 2, 0, radius * 2)
-	fovCircle.Visible = true
+local function expandHitbox(char)
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp or hrpCache[char] then return end
+    hrpCache[char] = hrp.Size
+    hrp.Size = HRP_SIZE
 end
 
--- settings update throttle, no need every frame
-local lastSettingsUpdate = 0
-local function throttledSettingsUpdate()
-	local now = tick()
-	if now - lastSettingsUpdate < 0.1 then return end
-	lastSettingsUpdate = now
-	updatesilentvalues()
+local function restoreHitboxes()
+    for char, sz in pairs(hrpCache) do
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if hrp then hrp.Size = sz end
+        hrpCache[char] = nil
+    end
 end
+
+-- ── Highlight ─────────────────────────────────────────────────────────────────
+
+local function syncHighlight()
+    for p, hl in pairs(hlCache) do
+        if p ~= targetPlayer then
+            hl:Destroy()
+            hlCache[p] = nil
+        end
+    end
+    if not s_highlight or not targetPlayer then return end
+    local char = targetPlayer.Character
+    if not char then return end
+    local hl = hlCache[targetPlayer]
+    if not hl then
+        hl = Instance.new("Highlight")
+        hl.FillColor = Color3.fromRGB(255, 0, 0)
+        hl.OutlineColor = Color3.fromRGB(255, 255, 255)
+        hl.FillTransparency = 0.5
+        hl.OutlineTransparency = 0
+        hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        hl.Adornee = char
+        hl.Parent = char
+        hlCache[targetPlayer] = hl
+    else
+        hl.Adornee = char
+    end
+end
+
+-- ── Target Finder ─────────────────────────────────────────────────────────────
+
+local function getTarget(ox, oy, oz)
+    local best, bestDSq = nil, mhuge
+    local myChar = lp.Character
+    local n = #playerCache
+
+    for i = 1, n do
+        local p = playerCache[i]
+        local char = p.Character
+        if not char or char == myChar then continue end
+        if s_teamcheck and p.Team == lp.Team then continue end
+
+        local head = char:FindFirstChild("Head")
+        if not head then continue end
+
+        -- inline squared distance, zero allocations
+        local hx = head.Position.X
+        local hy = head.Position.Y
+        local hz = head.Position.Z
+        local ddx = ox - hx
+        local ddy = oy - hy
+        local ddz = oz - hz
+        if (ddx*ddx + ddy*ddy + ddz*ddz) > s_distSq then continue end
+
+        local hum = char:FindFirstChild("Humanoid")
+        if not hum or hum.Health <= 0 then continue end
+
+        -- screen projection
+        local sp, vis = cam:WorldToViewportPoint(head.Position)
+        if not vis then continue end
+
+        local sx = sp.X - c_vpx
+        local sy = sp.Y - c_vpy
+        local dSq = sx*sx + sy*sy
+
+        if dSq >= c_fovSq or dSq >= bestDSq then continue end
+
+        -- wallcheck last (most expensive)
+        if s_wallcheck then
+            rp.FilterDescendantsInstances = {myChar, char}
+            local dirx = hx - c_pos.X
+            local diry = hy - c_pos.Y
+            local dirz = hz - c_pos.Z
+            local res = WS:Raycast(c_pos, Vector3.new(dirx, diry, dirz), rp)
+            if res then continue end
+        end
+
+        bestDSq = dSq
+        best = head
+        targetPlayer = p
+    end
+
+    if not best then targetPlayer = nil end
+    targetHead = best
+    return best
+end
+
+-- ── FOV Circle ────────────────────────────────────────────────────────────────
+
+local function drawFOV()
+    if not Circlefov then return end
+    if not s_showFov or not s_active then
+        Circlefov.Visible = false
+        return
+    end
+    local mp = UIS:GetMouseLocation()
+    fovCirclePos = fovCirclePos and fovCirclePos:Lerp(mp, 0.28) or mp
+    local r = c_fovR
+    Circlefov.Position = UDim2.new(0, fovCirclePos.X - r, 0, fovCirclePos.Y - r)
+    Circlefov.Size = UDim2.new(0, r + r, 0, r + r)
+    Circlefov.Visible = true
+end
+
+-- ── Util Hooks ────────────────────────────────────────────────────────────────
 
 local origRaycast = util.Raycast
 util.Raycast = function(self, origin, direction, dist, ...)
-	if active and not isLobbyVisible() and isAimActive() then
-		local target = getTarget(origin)
-		if target and math.random(100) <= accuracy then
-			local rootPart = target.Parent:FindFirstChild("HumanoidRootPart")
-			local velocity = rootPart and rootPart.AssemblyLinearVelocity or Vector3.zero
-			local predictedPos = target.Position + (velocity * localPlayer:GetNetworkPing())
-			return origRaycast(self, origin, predictedPos, dist, ...)
-		end
-	end
-	return origRaycast(self, origin, direction, dist, ...)
+    if s_active and not isLobby() and aimActive() then
+        local ox = origin.X
+        local oy = origin.Y
+        local oz = origin.Z
+        local target = getTarget(ox, oy, oz)
+        if target and mrand(100) <= s_accuracy then
+            local hrp = target.Parent:FindFirstChild("HumanoidRootPart")
+            local vel = hrp and hrp.AssemblyLinearVelocity or ZERO3
+            local ping = getPing()
+            local px = target.Position.X + vel.X * ping
+            local py = target.Position.Y + vel.Y * ping
+            local pz = target.Position.Z + vel.Z * ping
+            return origRaycast(self, origin, Vector3.new(px, py, pz), dist, ...)
+        end
+    end
+    return origRaycast(self, origin, direction, dist, ...)
 end
 
 local origParticles = util.PlayParticles
 util.PlayParticles = function(self, obj)
-	if typeof(obj) == "Instance" then
-		local n = obj.Name:lower()
-		if n:find("flash") or n:find("smoke") or n:find("blind") then return end
-	end
-	return origParticles(self, obj)
+    if typeof(obj) == "Instance" then
+        local n = obj.Name:lower()
+        if n:find("flash") or n:find("smoke") or n:find("blind") then return end
+    end
+    return origParticles(self, obj)
 end
 
-local frameCount = 0
+-- ── Main Loop ─────────────────────────────────────────────────────────────────
+
 RunService:BindToRenderStep("SilentAim", Enum.RenderPriority.Camera.Value + 1, function()
-	frameCount += 1
+    frameCount += 1
 
-	-- throttle heavy stuff to every 2 frames
-	if frameCount % 2 == 0 then
-		throttledSettingsUpdate()
-	end
+    -- sync camera every frame (cheap, needed for accuracy)
+    syncCamera()
 
-	UpdateFOVCircle()
+    -- throttled syncs
+    local f6 = frameCount % 6 == 0
+    if f6 then
+        syncSettings()
+        syncKey()
+        syncPlayers()
+        syncHighlight()
+    end
 
-	local islobby = isLobbyVisible()
-	local aimActive = isAimActive()
+    drawFOV()
 
-	if not islobby and active and aimActive then
-		local myRoot = localPlayer.Character and localPlayer.Character:FindFirstChild("HumanoidRootPart")
-		getTarget(myRoot and myRoot.Position or camera.CFrame.Position)
+    if not isLobby() and s_active and aimActive() then
+        local myRoot = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
+        local op = myRoot and myRoot.Position or c_pos
+        getTarget(op.X, op.Y, op.Z)
 
-		if targetPlayer and targetPlayer.Character then
-			expandHitbox(targetPlayer.Character)
-		else
-			restoreAllHitboxes()
-		end
-	else
-		if targetPlayer then
-			targetPlayer = nil
-			targetHead = nil
-			toggleState = false
-			restoreAllHitboxes()
-		end
-	end
-
-	-- highlight every 3 frames, no need every frame
-	if frameCount % 3 == 0 then
-		updateHighlight()
-	end
-end)
-
-Players.PlayerRemoving:Connect(function(player)
-	if player.Character then
-		restoreHitbox(player.Character)
-	end
+        if targetPlayer and targetPlayer.Character then
+            expandHitbox(targetPlayer.Character)
+        else
+            restoreHitboxes()
+        end
+    else
+        if targetPlayer or toggleState then
+            targetPlayer = nil
+            targetHead = nil
+            toggleState = false
+            restoreHitboxes()
+        end
+    end
 end)
