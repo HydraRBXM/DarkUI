@@ -2,7 +2,7 @@ local util = require(game:GetService("ReplicatedStorage").Modules.Utility)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
- print("gfn")
+
 local lp = Players.LocalPlayer
 local cam = workspace.CurrentCamera
 local WS = workspace
@@ -11,19 +11,20 @@ local mrand = math.random
 local mhuge = math.huge
 local msqrt = math.sqrt
 local tick = tick
- 
+
 local sharedsilent = shared.Silentaim
- 
+
 local targetPlayer = nil
 local targetHead = nil
 local toggleState = false
 local lastKeyState = false
 local frameCount = 0
- 
+
 local s_active = false
 local s_wallcheck = false
 local s_teamcheck = false
 local s_distance = 100
+local s_distSq = 10000
 local s_fov = 80
 local s_showFov = true
 local s_accuracy = 100
@@ -32,7 +33,13 @@ local s_key = "MB2"
 local s_highlight = false
 local s_bodychance = 98
 local s_headchance = 67
- 
+
+local c_pos = Vector3.zero
+local c_vpx = 0
+local c_vpy = 0
+local c_fovSq = 0
+local c_fovR = 0
+
 local lobbyCache = false
 local lastLobbyTick = 0
 local cachedPing = 0
@@ -40,34 +47,28 @@ local lastPingTick = 0
 local lastSettingsTick = 0
 local lastPlayersTick = 0
 local playerCache = {}
- 
+
 local hrpCache = {}
 local HRP_SIZE = Vector3.new(6, 6, 6)
- 
+
 local keyMB = nil
 local keyEnum = nil
 local keyStr = ""
- 
+
 local rp = RaycastParams.new()
 rp.FilterType = Enum.RaycastFilterType.Exclude
 rp.IgnoreWater = true
- 
+
 local _MB1 = Enum.UserInputType.MouseButton1
 local _MB2 = Enum.UserInputType.MouseButton2
 local _MB3 = Enum.UserInputType.MouseButton3
 local ZERO3 = Vector3.zero
- 
+
 local Circlefov = sharedsilent.sfovCircle
 local fovCirclePos = nil
 local hlCache = {}
- 
 local _lobbyRef = nil
- 
--- ✅ FIX #1: Per-shot accuracy tracking
-local shotAccuracy = {}
- 
--- ── Settings ──────────────────────────────────────────────────────────────────
- 
+
 local function syncSettings()
 	local now = tick()
 	if now - lastSettingsTick < 0.15 then return end
@@ -86,11 +87,10 @@ local function syncSettings()
 		s_fov        = sharedsilent.sFov.Value
 		local d      = sharedsilent.sdistance.Value
 		s_distance   = d
+		s_distSq     = d * d
 	end)
 end
- 
--- ── Key Cache ─────────────────────────────────────────────────────────────────
- 
+
 local function syncKey()
 	if s_key == keyStr then return end
 	keyStr = s_key
@@ -106,13 +106,13 @@ local function syncKey()
 		keyEnum = Enum.KeyCode[s_key]
 	end
 end
- 
+
 local function keyDown()
 	if keyMB then return UIS:IsMouseButtonPressed(keyMB) end
 	if keyEnum then return UIS:IsKeyDown(keyEnum) end
 	return false
 end
- 
+
 local function aimActive()
 	local kd = keyDown()
 	if s_mode == "Hold" then return kd end
@@ -124,9 +124,7 @@ local function aimActive()
 	if s_mode == "Always" then return true end
 	return false
 end
- 
--- ── Lobby ─────────────────────────────────────────────────────────────────────
- 
+
 local function isLobby()
 	local now = tick()
 	if now - lastLobbyTick < 0.5 then return lobbyCache end
@@ -139,19 +137,15 @@ local function isLobby()
 	lobbyCache = _lobbyRef and _lobbyRef.Visible or false
 	return lobbyCache
 end
- 
--- ── Ping ──────────────────────────────────────────────────────────────────────
- 
+
 local function getPing()
 	local now = tick()
 	if now - lastPingTick < 1 then return cachedPing end
 	lastPingTick = now
-	cachedPing = lp:GetNetworkPing() / 1000  -- ✅ Convert to seconds
+	cachedPing = lp:GetNetworkPing()
 	return cachedPing
 end
- 
--- ── Players ───────────────────────────────────────────────────────────────────
- 
+
 local function syncPlayers()
 	local now = tick()
 	if now - lastPlayersTick < 2 then return end
@@ -167,7 +161,7 @@ local function syncPlayers()
 		end
 	end
 end
- 
+
 Players.PlayerAdded:Connect(function() lastPlayersTick = 0 end)
 Players.PlayerRemoving:Connect(function(p)
 	lastPlayersTick = 0
@@ -177,18 +171,24 @@ Players.PlayerRemoving:Connect(function(p)
 		if hrp then hrp.Size = hrpCache[char] end
 		hrpCache[char] = nil
 	end
-	shotAccuracy[p] = nil
 end)
- 
--- ── Hitbox ────────────────────────────────────────────────────────────────────
- 
+
+local function syncCamera()
+	c_pos = cam.CFrame.Position
+	local vp = cam.ViewportSize
+	c_vpx = vp.X * 0.5
+	c_vpy = vp.Y * 0.5
+	c_fovR = (s_fov / 180) * c_vpy
+	c_fovSq = c_fovR * c_fovR
+end
+
 local function expandHitbox(char)
 	local hrp = char:FindFirstChild("HumanoidRootPart")
 	if not hrp or hrpCache[char] then return end
 	hrpCache[char] = hrp.Size
 	hrp.Size = HRP_SIZE
 end
- 
+
 local function restoreHitboxes()
 	for char, sz in pairs(hrpCache) do
 		local hrp = char:FindFirstChild("HumanoidRootPart")
@@ -196,9 +196,7 @@ local function restoreHitboxes()
 		hrpCache[char] = nil
 	end
 end
- 
--- ── Highlight ─────────────────────────────────────────────────────────────────
- 
+
 local function syncHighlight()
 	for p, hl in pairs(hlCache) do
 		if p ~= targetPlayer then
@@ -224,110 +222,94 @@ local function syncHighlight()
 		hl.Adornee = char
 	end
 end
- 
--- ✅ EXACT METHOD: getTarget function from the example
-local function getTarget(origin)
-	local center = Vector2.new(cam.ViewportSize.X / 2, cam.ViewportSize.Y / 2)
-	local best, bestDist = nil, math.huge
+
+-- returns head Part directly like the open source
+local function getTarget(ox, oy, oz)
+	local best, bestDSq = nil, mhuge
 	local myChar = lp.Character
-	for _, p in pairs(Players:GetPlayers()) do
-		if p == lp then continue end
+	local n = #playerCache
+
+	for i = 1, n do
+		local p = playerCache[i]
 		local char = p.Character
 		if not char or char == myChar then continue end
+		if s_teamcheck and p.Team == lp.Team then continue end
+
 		local head = char:FindFirstChild("Head")
-		local hum  = char:FindFirstChildOfClass("Humanoid")
-		if not head or not hum or hum.Health <= 0 then continue end
-		if (origin - head.Position).Magnitude > s_distance then continue end
+		if not head then continue end
+
+		local hx = head.Position.X
+		local hy = head.Position.Y
+		local hz = head.Position.Z
+
+		local ddx = c_pos.X - hx
+		local ddy = c_pos.Y - hy
+		local ddz = c_pos.Z - hz
+		if (ddx*ddx + ddy*ddy + ddz*ddz) > s_distSq then continue end
+
+		local hum = char:FindFirstChild("Humanoid")
+		if not hum or hum.Health <= 0 then continue end
+
 		local sp, vis = cam:WorldToViewportPoint(head.Position)
-		if not vis then continue end
-		local d = (Vector2.new(sp.X, sp.Y) - center).Magnitude
-		if d < s_fov and d < bestDist then
-			bestDist = d
-			best = head
-			targetPlayer = p
+		if not vis or sp.Z <= 0 then continue end
+
+		local sx = sp.X - c_vpx
+		local sy = sp.Y - c_vpy
+		local dSq = sx*sx + sy*sy
+
+		if dSq >= c_fovSq or dSq >= bestDSq then continue end
+
+		if s_wallcheck then
+			rp.FilterDescendantsInstances = {myChar, char}
+			local res = WS:Raycast(c_pos, Vector3.new(hx - c_pos.X, hy - c_pos.Y, hz - c_pos.Z), rp)
+			if res then continue end
 		end
+
+		bestDSq = dSq
+		best = head
+		targetPlayer = p
 	end
+
 	if not best then targetPlayer = nil end
+	targetHead = best
 	return best
 end
- 
--- ✅ EXACT METHOD: GUI FOV Circle update
-local function updateFOVCircle()
+
+local function drawFOV()
 	if not Circlefov then return end
 	if not s_showFov or not s_active then
 		Circlefov.Visible = false
 		return
 	end
-	local center = cam.ViewportSize / 2
-	local myRoot = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
-	local origin = myRoot and myRoot.Position or cam.CFrame.Position
-	local target = getTarget(origin)
-	
-	-- Update FOV circle position
-	Circlefov.Position = UDim2.new(0, center.X - s_fov, 0, center.Y - s_fov)
-	Circlefov.Size = UDim2.new(0, s_fov * 2, 0, s_fov * 2)
-	
-	-- Change color based on target
-	if target then
-		Circlefov.BackgroundColor3 = Color3.fromRGB(255, 50, 50)  -- Red = locked
-	else
-		Circlefov.BackgroundColor3 = Color3.fromRGB(0, 200, 255)  -- Blue = searching
-	end
+	local mp = UIS:GetMouseLocation()
+	fovCirclePos = fovCirclePos and fovCirclePos:Lerp(mp, 0.28) or mp
+	local r = c_fovR
+	Circlefov.Position = UDim2.new(0, fovCirclePos.X - r, 0, fovCirclePos.Y - r)
+	Circlefov.Size = UDim2.new(0, r + r, 0, r + r)
 	Circlefov.Visible = true
 end
- 
--- ── Util Hooks ────────────────────────────────────────────────────────────────
- 
+
+-- exactly like open source: pass world pos directly, add ping prediction on top
 local origRaycast = util.Raycast
 util.Raycast = function(self, origin, direction, dist, ...)
 	if s_active and not isLobby() and aimActive() then
-		local target = getTarget(origin)
- 
-		if target then
-			-- ✅ Per-shot accuracy (not per-frame)
-			if not shotAccuracy[targetPlayer] then
-				shotAccuracy[targetPlayer] = mrand(100) <= s_accuracy
-			end
-			
-			if shotAccuracy[targetPlayer] then
-				local hrp = target.Parent:FindFirstChild("HumanoidRootPart")
-				local vel = hrp and hrp.AssemblyLinearVelocity or ZERO3
- 
-				local tx = target.Position.X
-				local ty = target.Position.Y
-				local tz = target.Position.Z
- 
-				-- ✅ Improved prediction with proper ping conversion
-				local tdx = tx - origin.X
-				local tdy = ty - origin.Y
-				local tdz = tz - origin.Z
-				local travelDist = msqrt(tdx*tdx + tdy*tdy + tdz*tdz)
-				local bulletSpeed = 300
-				local travelTime = (travelDist / bulletSpeed) + getPing()
- 
-				-- predicted position
-				local px = tx + vel.X * travelTime
-				local py = ty + vel.Y * travelTime
-				local pz = tz + vel.Z * travelTime
- 
-				-- Use world position directly
-				local ddx = px - origin.X
-				local ddy = py - origin.Y
-				local ddz = pz - origin.Z
-				local len = msqrt(ddx*ddx + ddy*ddy + ddz*ddz)
- 
-				if len > 0 then
-					local scale = dist / len
-					return origRaycast(self, origin, Vector3.new(ddx*scale, ddy*scale, ddz*scale), dist, ...)
-				end
-			else
-				shotAccuracy[targetPlayer] = nil
-			end
+		local target = getTarget(origin.X, origin.Y, origin.Z)
+		if target and mrand(100) <= s_accuracy then
+			local hrp = target.Parent:FindFirstChild("HumanoidRootPart")
+			local vel = hrp and hrp.AssemblyLinearVelocity or ZERO3
+			local ping = getPing()
+			-- world pos + ping prediction, exactly like open source but with velocity
+			local predictedPos = Vector3.new(
+				target.Position.X + vel.X * ping,
+				target.Position.Y + vel.Y * ping,
+				target.Position.Z + vel.Z * ping
+			)
+			return origRaycast(self, origin, predictedPos, dist, ...)
 		end
 	end
 	return origRaycast(self, origin, direction, dist, ...)
 end
- 
+
 local origParticles = util.PlayParticles
 util.PlayParticles = function(self, obj)
 	if typeof(obj) == "Instance" then
@@ -336,12 +318,12 @@ util.PlayParticles = function(self, obj)
 	end
 	return origParticles(self, obj)
 end
- 
--- ── Main Loop ─────────────────────────────────────────────────────────────────
- 
+
 RunService:BindToRenderStep("SilentAim", Enum.RenderPriority.Camera.Value + 1, function()
 	frameCount += 1
- 
+
+	syncCamera()
+
 	local f6 = frameCount % 6 == 0
 	if f6 then
 		syncSettings()
@@ -349,15 +331,12 @@ RunService:BindToRenderStep("SilentAim", Enum.RenderPriority.Camera.Value + 1, f
 		syncPlayers()
 		syncHighlight()
 	end
- 
-	-- ✅ EXACT METHOD: Update FOV circle
-	updateFOVCircle()
- 
+
+	drawFOV()
+
 	if not isLobby() and s_active and aimActive() then
-		local myRoot = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
-		local origin = myRoot and myRoot.Position or cam.CFrame.Position
-		getTarget(origin)
- 
+		getTarget(c_pos.X, c_pos.Y, c_pos.Z)
+
 		if targetPlayer and targetPlayer.Character then
 			expandHitbox(targetPlayer.Character)
 		else
@@ -368,9 +347,6 @@ RunService:BindToRenderStep("SilentAim", Enum.RenderPriority.Camera.Value + 1, f
 			targetPlayer = nil
 			targetHead = nil
 			toggleState = false
-			for p in pairs(shotAccuracy) do
-				shotAccuracy[p] = nil
-			end
 			restoreHitboxes()
 		end
 	end
