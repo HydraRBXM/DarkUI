@@ -2,7 +2,7 @@ local util = require(game:GetService("ReplicatedStorage").Modules.Utility)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
- 
+ print("gfn")
 local lp = Players.LocalPlayer
 local cam = workspace.CurrentCamera
 local WS = workspace
