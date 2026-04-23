@@ -616,8 +616,6 @@ local function OnCharacterAdded(newChar)
 
 	local hum = GetHum()
 
-	if C.LoopWalkspeed.Value then StartLoopWS() end
-	if C.LoopJumpPower.Value then StartLoopJP() end
 	if C.LoopFOV.Value then StartLoopFov() end
 	if C.Noclip.Value then StartNoclip() end
 	if C.AntiAFK.Value then StartAntiAFK() end
