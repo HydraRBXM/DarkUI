@@ -1,4 +1,3 @@
--- Client Handler - v3 (Optimized)
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
@@ -8,7 +7,8 @@ local Lighting = game:GetService("Lighting")
 local Players = game:GetService("Players")
 local Player = Players.LocalPlayer
 
-local C = shared.Client -- shorthand alias
+local C = shared.Client
+local A = shared.MiscOptions
 
 local function GetCharacter() return Player.Character end
 local function GetHRP()
@@ -22,9 +22,6 @@ end
 
 local CFLY_ROTATE_SPEED = 12
 
--- ═══════════════════════════════════════════
---  HELPERS
--- ═══════════════════════════════════════════
 local function SafeDisconnect(conn)
 	if conn then conn:Disconnect() end
 	return nil
@@ -63,9 +60,6 @@ local function TweenFOV(target)
 	TweenService:Create(Camera, TweenInfo.new(0.5), { FieldOfView = target }):Play()
 end
 
--- ═══════════════════════════════════════════
---  NAKED
--- ═══════════════════════════════════════════
 local function ApplyNaked()
 	local char = GetCharacter()
 	if not char then return end
@@ -89,9 +83,6 @@ C.Naked:OnChanged(function()
 	if C.Naked.Value then ApplyNaked() else RevertNaked() end
 end)
 
--- ═══════════════════════════════════════════
---  CHARACTER MATERIALS
--- ═══════════════════════════════════════════
 local MaterialMap = {
 	SmoothPlastic = Enum.Material.SmoothPlastic,
 	Neon = Enum.Material.Neon,
@@ -99,6 +90,7 @@ local MaterialMap = {
 	Metal = Enum.Material.Metal,
 	Wood = Enum.Material.Wood,
 	Fabric = Enum.Material.Fabric,
+	ForceField = Enum.Material.ForceField,
 }
 
 C.CharacterMaterials:OnChanged(function()
@@ -113,79 +105,8 @@ C.CharacterMaterials:OnChanged(function()
 	end
 end)
 
--- ═══════════════════════════════════════════
---  LOOP WALKSPEED
--- ═══════════════════════════════════════════
-local function StopLoopWS()
-	C.LoopWSConnection = SafeDisconnect(C.LoopWSConnection)
-end
 
-local function StartLoopWS()
-	StopLoopWS()
-	if not C.LoopWalkspeed.Value then return end
-	C.LoopWSConnection = RunService.Heartbeat:Connect(function()
-		if not C.LoopWalkspeed.Value then StopLoopWS() return end
-		local hum = GetHum()
-		if hum then hum.WalkSpeed = C.Walkspeed.Value end
-	end)
-end
 
-C.LoopWalkspeed:OnChanged(function()
-	if C.LoopWalkspeed.Value then
-		StartLoopWS()
-	else
-		StopLoopWS()
-		local hum = GetHum()
-		if hum then hum.WalkSpeed = 16 end
-	end
-end)
-
-C.Walkspeed:OnChanged(function()
-	local hum = GetHum()
-	if hum then hum.WalkSpeed = C.Walkspeed.Value end
-end)
-
--- ═══════════════════════════════════════════
---  LOOP JUMP POWER
--- ═══════════════════════════════════════════
-local function StopLoopJP()
-	C.LoopJPConnection = SafeDisconnect(C.LoopJPConnection) -- fixed: was writing to bare LoopJPConnection
-end
-
-local function StartLoopJP()
-	StopLoopJP()
-	if not C.LoopJumpPower.Value then return end
-	C.LoopJPConnection = RunService.Heartbeat:Connect(function()
-		if not C.LoopJumpPower.Value then StopLoopJP() return end
-		local hum = GetHum()
-		if hum then
-			hum.JumpPower = C.JumpPower.Value
-			hum.JumpHeight = C.JumpPower.Value
-		end
-	end)
-end
-
-C.LoopJumpPower:OnChanged(function()
-	if C.LoopJumpPower.Value then
-		StartLoopJP()
-	else
-		StopLoopJP()
-		local hum = GetHum()
-		if hum then hum.JumpPower = 50; hum.JumpHeight = 7.2 end
-	end
-end)
-
-C.JumpPower:OnChanged(function()
-	local hum = GetHum()
-	if hum then
-		hum.JumpPower = C.JumpPower.Value
-		hum.JumpHeight = C.JumpPower.Value
-	end
-end)
-
--- ═══════════════════════════════════════════
---  LOOP FOV
--- ═══════════════════════════════════════════
 local function StopLoopFov()
 	C.LoopFovConnection = SafeDisconnect(C.LoopFovConnection)
 end
@@ -207,9 +128,6 @@ C.Fov:OnChanged(function()
 	TweenService:Create(Camera, TweenInfo.new(0.3), { FieldOfView = C.Fov.Value }):Play()
 end)
 
--- ═══════════════════════════════════════════
---  NOCLIP
--- ═══════════════════════════════════════════
 local function StopNoclip()
 	C.NoclipConnection = SafeDisconnect(C.NoclipConnection)
 	local char = GetCharacter()
@@ -238,9 +156,6 @@ C.Noclip:OnChanged(function()
 	if C.Noclip.Value then StartNoclip() else StopNoclip() end
 end)
 
--- ═══════════════════════════════════════════
---  PAUSE [FE]
--- ═══════════════════════════════════════════
 local PauseSavedCFrame
 
 local function StopPause()
@@ -279,11 +194,6 @@ C.PauseFE:OnChanged(function()
 	if C.PauseFE.Value then StartPause() else StopPause() end
 end)
 
--- ═══════════════════════════════════════════
---  RAINBOW TOOL  (ViewModel-based — workspace.ViewModels)
---  Colorizes every BasePart/MeshPart/SpecialMesh inside all
---  models found under workspace.ViewModels.
--- ═══════════════════════════════════════════
 local function StopRainbowTool()
 	C.RainbowtoolCon = SafeDisconnect(C.RainbowtoolCon)
 	for part, color in pairs(C.RainbowToolOrigColors or {}) do
@@ -312,7 +222,6 @@ local function StartRainbowTool()
 			if not model:IsA("Model") then continue end
 			for _, part in ipairs(model:GetDescendants()) do
 				if part:IsA("BasePart") then
-					-- save original color once
 					if not C.RainbowToolOrigColors[part] then
 						C.RainbowToolOrigColors[part] = part.Color
 					end
@@ -327,10 +236,6 @@ C.RainbowTool:OnChanged(function()
 	if C.RainbowTool.Value then StartRainbowTool() else StopRainbowTool() end
 end)
 
--- ═══════════════════════════════════════════
---  RAINBOW CHARACTER
---  Fixed: was referencing bare cfUp/cfDown globals; now uses per-part spread hue
--- ═══════════════════════════════════════════
 local function StopRainbowChar()
 	C.RainbowcharCon = SafeDisconnect(C.RainbowcharCon)
 	for part, color in pairs(C.RainbowCharOrigColors or {}) do
@@ -348,7 +253,6 @@ local function StartRainbowChar()
 		local char = GetCharacter()
 		if not char then return end
 
-		-- collect BaseParts once per frame
 		local parts = {}
 		for _, part in ipairs(char:GetDescendants()) do
 			if part:IsA("BasePart") then
@@ -363,7 +267,6 @@ local function StartRainbowChar()
 			if not C.RainbowCharOrigColors[part] then
 				C.RainbowCharOrigColors[part] = part.Color
 			end
-			-- spread hue evenly across the whole character
 			part.Color = Color3.fromHSV((baseHue + (i - 1) / total) % 1, 0.95, 1)
 		end
 	end)
@@ -373,11 +276,8 @@ C.RainbowCharacter:OnChanged(function()
 	if C.RainbowCharacter.Value then StartRainbowChar() else StopRainbowChar() end
 end)
 
--- ═══════════════════════════════════════════
---  RTX
--- ═══════════════════════════════════════════
 local RTXDescendantConn
-local RTXLightingInstances = {}  -- local, mirrored into C below when needed
+local RTXLightingInstances = {}
 
 local function RTXSaveLightingProp(prop)
 	if C.RTXLightingSaved[prop] == nil then
@@ -463,9 +363,6 @@ C.RTX:OnChanged(function()
 	if C.RTX.Value then ApplyRTX() else RevertRTX() end
 end)
 
--- ═══════════════════════════════════════════
---  NO ZOOM LIMIT
--- ═══════════════════════════════════════════
 C.NoZoomLimit:OnChanged(function()
 	pcall(function()
 		local PlayerModule = require(Player.PlayerScripts:WaitForChild("PlayerModule"))
@@ -480,9 +377,6 @@ C.NoZoomLimit:OnChanged(function()
 	end)
 end)
 
--- ═══════════════════════════════════════════
---  FLY  (F to toggle)
--- ═══════════════════════════════════════════
 local flyUp, flyDown = false, false
 
 local function StopFly()
@@ -563,10 +457,7 @@ C.Fly:OnChanged(function()
 	if C.Fly.Value then StartFly() else StopFly() end
 end)
 
--- ═══════════════════════════════════════════
---  CFRAME FLY  (G to toggle)
--- ═══════════════════════════════════════════
-local cfUp, cfDown = false, false  -- fixed: were bare globals referenced inconsistently
+local cfUp, cfDown = false, false
 
 local function StopCframeFly()
 	C.CFlying = false; cfUp = false; cfDown = false
@@ -635,9 +526,6 @@ C.CFly:OnChanged(function()
 	if C.CFly.Value then StartCframeFly() else StopCframeFly() end
 end)
 
--- ═══════════════════════════════════════════
---  ANTI AFK
--- ═══════════════════════════════════════════
 local function StopAntiAFK()
 	C.AntiAFKConnection = SafeDisconnect(C.AntiAFKConnection)
 end
@@ -666,11 +554,8 @@ end)
 
 C.AntiAFK:OnChanged(function()
 	if C.AntiAFK.Value then StartAntiAFK() else StopAntiAFK() end
-end)
+end) 
 
--- ═══════════════════════════════════════════
---  INFINITE JUMP
--- ═══════════════════════════════════════════
 local function StopInfJump()
 	C.InfJumpConn = SafeDisconnect(C.InfJumpConn)
 end
@@ -689,9 +574,6 @@ C.InfiniteJump:OnChanged(function()
 	if C.InfiniteJump.Value then StartInfJump() else StopInfJump() end
 end)
 
--- ═══════════════════════════════════════════
---  FREEZE
--- ═══════════════════════════════════════════
 local function SetFreeze(enabled)
 	local hrp = GetHRP(); local hum = GetHum()
 	if not hrp or not hum then return end
@@ -706,9 +588,6 @@ end
 
 C.Freeze:OnChanged(function() SetFreeze(C.Freeze.Value) end)
 
--- ═══════════════════════════════════════════
---  USE VELOCITY
--- ═══════════════════════════════════════════
 local function StopUseVelocity()
 	C.UseVelocityConnection = SafeDisconnect(C.UseVelocityConnection)
 end
@@ -730,19 +609,12 @@ C.Velocity:OnChanged(function()
 	if C.Velocity.Value then StartUseVelocity() else StopUseVelocity() end
 end)
 
--- ═══════════════════════════════════════════
---  CHARACTER RESPAWN — re-enable features on respawn
--- ═══════════════════════════════════════════
 local function OnCharacterAdded(newChar)
 	WaitUntil(function() return newChar:FindFirstChildOfClass("Humanoid") end)
 	WaitUntil(function() return newChar:FindFirstChild("HumanoidRootPart") end)
 	task.wait(0.15)
 
 	local hum = GetHum()
-	if hum then
-		hum.WalkSpeed = C.Walkspeed.Value
-		hum.JumpPower = C.JumpPower.Value
-	end
 
 	if C.LoopWalkspeed.Value then StartLoopWS() end
 	if C.LoopJumpPower.Value then StartLoopJP() end
